@@ -1,0 +1,81 @@
+# Docker Compose cho GoTracking PostgreSQL + PostGIS + TimescaleDB
+
+version: '3.8'
+
+services:
+  postgres:
+    image: timescale/timescaledb-ha:pg14-latest
+    container_name: gotracking-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: gotracking
+      POSTGRES_PASSWORD: gotracking_password
+      POSTGRES_DB: gotracking_db
+      # Timezone
+      TZ: Asia/Ho_Chi_Minh
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U gotracking']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: >
+      -c shared_preload_libraries=timescaledb,pg_stat_statements
+      -c max_connections=200
+      -c shared_buffers=2GB
+      -c effective_cache_size=6GB
+      -c maintenance_work_mem=512MB
+      -c work_mem=128MB
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=200
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: gotracking-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@gotracking.com
+      PGADMIN_DEFAULT_PASSWORD: admin_password
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+    ports:
+      - '8080:80'
+    depends_on:
+      - postgres
+
+  redis:
+    image: redis:7-alpine
+    container_name: gotracking-redis
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis-data:/data
+      - ./redis/redis.conf:/usr/local/etc/redis/redis.conf
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: redis-server /usr/local/etc/redis/redis.conf
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: gotracking-redis-commander
+    restart: unless-stopped
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    ports:
+      - '8081:8081'
+    depends_on:
+      - redis
+
+volumes:
+  postgres-data:
+  pgadmin-data:
+  redis-data:

@@ -1,0 +1,1165 @@
+CREATE TABLE organizations (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    type VARCHAR(50) NOT NULL, -- hospital, university, mall, factory, etc.
+    subscription_plan VARCHAR(50),
+    subscription_start_date DATE,
+    subscription_end_date DATE,
+    settings JSONB -- Thiết lập riêng cho từng tổ chức
+);
+
+CREATE TABLE buildings (
+    id SERIAL PRIMARY KEY,
+    organization_id INTEGER REFERENCES organizations(id),
+    name VARCHAR(255) NOT NULL,
+    address TEXT,
+    description TEXT,
+    geo_location POINT -- Tọa độ GPS của tòa nhà
+);
+
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    organization_id INTEGER REFERENCES organizations(id),
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    full_name VARCHAR(255),
+    phone VARCHAR(20),
+    role VARCHAR(20) NOT NULL, -- admin, staff, visitor
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_login TIMESTAMP
+);
+
+CREATE TABLE user_permissions (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id),
+    building_id INTEGER REFERENCES buildings(id), -- Quyền truy cập tòa nhà cụ thể
+    permission_type VARCHAR(50), -- tracking, view_analytics, edit_maps, etc.
+    is_allowed BOOLEAN DEFAULT TRUE
+);
+
+CREATE TABLE floors (
+    id SERIAL PRIMARY KEY,
+    building_id INTEGER REFERENCES buildings(id),
+    floor_number INTEGER NOT NULL,
+    floor_name VARCHAR(50),
+    map_image_url TEXT, -- URL đến hình ảnh bản đồ
+    width FLOAT, -- Kích thước thực tế theo mét
+    height FLOAT,
+    scale_factor FLOAT -- Hệ số tỷ lệ giữa pixel và mét
+);
+
+CREATE TABLE zones (
+    id SERIAL PRIMARY KEY,
+    floor_id INTEGER REFERENCES floors(id),
+    name VARCHAR(255) NOT NULL,
+    zone_type VARCHAR(50), -- safe, restricted, etc.
+    coordinates POLYGON, -- Đa giác định nghĩa vùng
+    color VARCHAR(20), -- Màu hiển thị trên bản đồ
+    description TEXT,
+    restrictions JSONB -- Quy định cho từng vùng
+);
+
+CREATE TABLE poi_categories (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    parent_id INTEGER REFERENCES poi_categories(id),
+    icon VARCHAR(50),
+    color VARCHAR(20),
+    is_searchable BOOLEAN DEFAULT TRUE,
+    display_order INTEGER DEFAULT 0
+);
+
+CREATE TABLE points_of_interest (
+    id SERIAL PRIMARY KEY,
+    floor_id INTEGER REFERENCES floors(id),
+    name VARCHAR(255) NOT NULL,
+    subname VARCHAR(255),
+    poi_type VARCHAR(50), -- room, stairs, elevator, reception, etc.
+    category_id INTEGER REFERENCES poi_categories(id),
+    coordinates POINT, -- Tọa độ điểm trên bản đồ
+    description TEXT,
+    keywords TEXT[],
+    aliases TEXT[],
+    icon_type VARCHAR(50), -- Biểu tượng hiển thị
+    is_searchable BOOLEAN DEFAULT TRUE,
+    search_priority INTEGER DEFAULT 0,
+    metadata JSONB, -- Thông tin bổ sung
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    searchable_text TEXT GENERATED ALWAYS AS (
+        name || ' ' || COALESCE(subname, '') || ' ' || COALESCE(description, '') || ' ' || 
+        COALESCE(array_to_string(keywords, ' '), '') || ' ' || COALESCE(array_to_string(aliases, ' '), '')
+    ) STORED
+);
+
+CREATE TABLE navigation_nodes (
+    id SERIAL PRIMARY KEY,
+    floor_id INTEGER REFERENCES floors(id),
+    coordinates POINT,
+    node_type VARCHAR(50), -- normal, junction, transition (stairs/elevator)
+    metadata JSONB -- Thông tin bổ sung
+);
+
+CREATE TABLE navigation_edges (
+    id SERIAL PRIMARY KEY,
+    from_node_id INTEGER REFERENCES navigation_nodes(id),
+    to_node_id INTEGER REFERENCES navigation_nodes(id),
+    distance FLOAT, -- Khoảng cách thực tế
+    travel_time INTEGER, -- Thời gian di chuyển tính bằng giây
+    accessibility BOOLEAN DEFAULT TRUE, -- Có thể đi qua không
+    edge_type VARCHAR(50) -- normal, stairs, elevator, etc.
+);
+
+CREATE TABLE floor_transitions (
+    id SERIAL PRIMARY KEY,
+    from_node_id INTEGER REFERENCES navigation_nodes(id),
+    to_node_id INTEGER REFERENCES navigation_nodes(id),
+    transition_type VARCHAR(50), -- stairs, elevator, escalator
+    travel_time INTEGER -- Thời gian chuyển tầng (giây)
+);
+
+CREATE TABLE beacons (
+    id SERIAL PRIMARY KEY,
+    floor_id INTEGER REFERENCES floors(id),
+    uuid VARCHAR(255),
+    major INTEGER,
+    minor INTEGER,
+    coordinates POINT,
+    battery_level INTEGER, -- Phần trăm pin còn lại
+    last_seen TIMESTAMP,
+    status VARCHAR(20) -- active, inactive, maintenance
+);
+
+CREATE TABLE wifi_access_points (
+    id SERIAL PRIMARY KEY,
+    floor_id INTEGER REFERENCES floors(id),
+    mac_address VARCHAR(50),
+    ssid VARCHAR(100),
+    coordinates POINT,
+    signal_strength INTEGER,
+    last_seen TIMESTAMP
+);
+
+CREATE TABLE location_history (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id),
+    coordinates POINT,
+    floor_id INTEGER REFERENCES floors(id),
+    accuracy FLOAT, -- Độ chính xác của vị trí (mét)
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    device_info JSONB, -- Thông tin thiết bị di động
+    positioning_method VARCHAR(50) -- ble, wifi, magnetic, etc.
+);
+
+CREATE TABLE realtime_locations (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id),
+    coordinates POINT,
+    floor_id INTEGER REFERENCES floors(id),
+    accuracy FLOAT,
+    heading INTEGER, -- Hướng (0-359 độ)
+    speed FLOAT, -- Tốc độ di chuyển (m/s)
+    last_updated TIMESTAMP,
+    device_id VARCHAR(255)
+);
+
+CREATE TABLE zone_alerts (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id),
+    zone_id INTEGER REFERENCES zones(id),
+    alert_type VARCHAR(50), -- entered, exited
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    acknowledged BOOLEAN DEFAULT FALSE,
+    acknowledged_by INTEGER REFERENCES users(id),
+    acknowledged_at TIMESTAMP
+);
+
+
+CREATE TABLE heatmap_data (
+    id SERIAL PRIMARY KEY,
+    floor_id INTEGER REFERENCES floors(id),
+    coordinates POINT,
+    density INTEGER, -- Mật độ người tại điểm
+    timestamp TIMESTAMP,
+    duration INTEGER -- Thời gian (phút)
+);
+
+CREATE TABLE traffic_flow (
+    id SERIAL PRIMARY KEY,
+    from_zone_id INTEGER REFERENCES zones(id),
+    to_zone_id INTEGER REFERENCES zones(id),
+    user_count INTEGER,
+    date DATE,
+    time_range VARCHAR(20), -- morning, afternoon, evening
+    avg_travel_time INTEGER -- Thời gian di chuyển trung bình (giây)
+);
+
+CREATE TABLE dwell_time (
+    id SERIAL PRIMARY KEY,
+    zone_id INTEGER REFERENCES zones(id),
+    date DATE,
+    hour INTEGER,
+    avg_time INTEGER, -- Thời gian lưu lại trung bình (giây)
+    user_count INTEGER -- Số người trong vùng
+);
+
+CREATE TABLE user_sessions (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id),
+    building_id INTEGER REFERENCES buildings(id),
+    session_start TIMESTAMP,
+    session_end TIMESTAMP,
+    entry_point VARCHAR(255), -- Điểm vào tòa nhà
+    exit_point VARCHAR(255), -- Điểm ra
+    device_info JSONB
+);
+
+CREATE TABLE navigation_requests (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id),
+    start_point_id INTEGER REFERENCES points_of_interest(id),
+    end_point_id INTEGER REFERENCES points_of_interest(id),
+    request_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    route_preference VARCHAR(50), -- shortest, accessible, etc.
+    completed BOOLEAN DEFAULT FALSE,
+    completion_time TIMESTAMP
+);
+
+CREATE TABLE routes (
+    id SERIAL PRIMARY KEY,
+    navigation_request_id INTEGER REFERENCES navigation_requests(id),
+    path JSONB, -- Mảng các node_id
+    distance FLOAT, -- Tổng khoảng cách (mét)
+    estimated_time INTEGER, -- Thời gian ước tính (giây)
+    floors_to_traverse INTEGER[] -- Các tầng cần đi qua
+);
+
+CREATE TABLE navigation_feedback (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id),
+    route_id INTEGER REFERENCES routes(id),
+    rating INTEGER, -- 1-5 sao
+    feedback_text TEXT,
+    reported_issue VARCHAR(255), -- wrong_direction, obstacle, etc.
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE notifications (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id),
+    title VARCHAR(255),
+    message TEXT,
+    notification_type VARCHAR(50), -- zone_alert, system, etc.
+    delivered BOOLEAN DEFAULT FALSE,
+    delivered_at TIMESTAMP,
+    read BOOLEAN DEFAULT FALSE,
+    read_at TIMESTAMP
+);
+
+CREATE TABLE system_logs (
+    id SERIAL PRIMARY KEY,
+    log_type VARCHAR(50), -- error, warning, info
+    source VARCHAR(100), -- module gây ra log
+    message TEXT,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    details JSONB
+);
+
+CREATE TABLE mobile_devices (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id),
+    device_id VARCHAR(255),
+    device_type VARCHAR(50), -- ios, android
+    device_name VARCHAR(255),
+    push_token TEXT,
+    app_version VARCHAR(20),
+    last_active TIMESTAMP
+);
+
+CREATE TABLE api_keys (
+    id SERIAL PRIMARY KEY,
+    organization_id INTEGER REFERENCES organizations(id),
+    api_key VARCHAR(255) UNIQUE NOT NULL,
+    description TEXT,
+    permissions JSONB,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP,
+    is_active BOOLEAN DEFAULT TRUE
+);
+
+CREATE TABLE search_history (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id),
+    search_query TEXT NOT NULL,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    result_count INTEGER,
+    selected_result_id INTEGER REFERENCES points_of_interest(id),
+    organization_id INTEGER REFERENCES organizations(id)
+);
+
+CREATE TABLE popular_destinations (
+    id SERIAL PRIMARY KEY,
+    poi_id INTEGER REFERENCES points_of_interest(id),
+    organization_id INTEGER REFERENCES organizations(id),
+    visit_count INTEGER DEFAULT 0,
+    search_count INTEGER DEFAULT 0,
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE hospital_departments (
+    id SERIAL PRIMARY KEY,
+    poi_id INTEGER REFERENCES points_of_interest(id),
+    department_name VARCHAR(255),
+    department_code VARCHAR(50),
+    specialty VARCHAR(100),
+    head_doctor VARCHAR(255),
+    operating_hours JSONB -- Giờ làm việc theo ngày
+);
+
+CREATE TABLE doctors (
+    id SERIAL PRIMARY KEY,
+    department_id INTEGER REFERENCES hospital_departments(id),
+    doctor_name VARCHAR(255),
+    specialty VARCHAR(100),
+    room_id INTEGER REFERENCES points_of_interest(id),
+    schedule JSONB, -- Lịch làm việc
+    availability BOOLEAN
+);
+
+CREATE TABLE patient_tracking (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id),
+    patient_id VARCHAR(100),
+    admission_date DATE,
+    discharge_date DATE,
+    last_location_id INTEGER REFERENCES points_of_interest(id),
+    last_update TIMESTAMP,
+    restrictions JSONB -- Giới hạn di chuyển của bệnh nhân
+);
+
+CREATE TABLE class_schedules (
+    id SERIAL PRIMARY KEY,
+    room_id INTEGER REFERENCES points_of_interest(id),
+    course_name VARCHAR(255),
+    professor VARCHAR(255),
+    class_date DATE,
+    start_time TIME,
+    end_time TIME,
+    student_count INTEGER,
+    recurring BOOLEAN,
+    recurrence_pattern VARCHAR(50) -- daily, weekly, etc.
+);
+
+CREATE TABLE campus_events (
+    id SERIAL PRIMARY KEY,
+    location_id INTEGER REFERENCES points_of_interest(id),
+    event_name VARCHAR(255),
+    event_type VARCHAR(100),
+    start_datetime TIMESTAMP,
+    end_datetime TIMESTAMP,
+    organizer VARCHAR(255),
+    expected_attendance INTEGER,
+    description TEXT
+);
+
+CREATE TABLE student_attendance (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id),
+    class_id INTEGER REFERENCES class_schedules(id),
+    check_in_time TIMESTAMP,
+    check_out_time TIMESTAMP,
+    attendance_status VARCHAR(20) -- present, late, absent
+);
+
+CREATE TABLE store_information (
+    id SERIAL PRIMARY KEY,
+    poi_id INTEGER REFERENCES points_of_interest(id),
+    brand_name VARCHAR(255),
+    category VARCHAR(100),
+    operating_hours JSONB,
+    contact_person VARCHAR(255),
+    phone VARCHAR(20),
+    website VARCHAR(255),
+    logo_url TEXT,
+    popularity_score FLOAT -- Điểm phổ biến dựa trên lượt ghé thăm
+);
+
+CREATE TABLE promotions (
+    id SERIAL PRIMARY KEY,
+    store_id INTEGER REFERENCES store_information(id),
+    promotion_title VARCHAR(255),
+    description TEXT,
+    start_date DATE,
+    end_date DATE,
+    discount_rate FLOAT,
+    image_url TEXT,
+    is_featured BOOLEAN DEFAULT FALSE
+);
+
+CREATE TABLE customer_journey (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id),
+    session_id INTEGER REFERENCES user_sessions(id),
+    store_visits JSONB, -- Mảng các cửa hàng đã ghé thăm và thời gian
+    purchase_made BOOLEAN DEFAULT FALSE,
+    journey_pattern VARCHAR(50), -- browsing, targeted, etc.
+    journey_duration INTEGER -- Thời gian tổng thể (phút)
+);
+
+CREATE TABLE safety_zones (
+    id SERIAL PRIMARY KEY,
+    zone_id INTEGER REFERENCES zones(id),
+    hazard_level INTEGER, -- 0-5, mức độ nguy hiểm
+    ppe_required JSONB, -- Thiết bị bảo hộ cần thiết
+    max_occupancy INTEGER, -- Số người tối đa được phép
+    emergency_procedures TEXT
+);
+
+CREATE TABLE equipment_tracking (
+    id SERIAL PRIMARY KEY,
+    equipment_name VARCHAR(255),
+    equipment_type VARCHAR(100),
+    beacon_id INTEGER REFERENCES beacons(id),
+    last_location_id INTEGER REFERENCES points_of_interest(id),
+    last_used_by INTEGER REFERENCES users(id),
+    status VARCHAR(50), -- in-use, available, maintenance
+    last_update TIMESTAMP
+);
+
+CREATE TABLE work_orders (
+    id SERIAL PRIMARY KEY,
+    assigned_to INTEGER REFERENCES users(id),
+    location_id INTEGER REFERENCES points_of_interest(id),
+    order_type VARCHAR(100),
+    description TEXT,
+    priority INTEGER, -- 1-5
+    status VARCHAR(50), -- pending, in-progress, completed
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP
+);
+
+-- Indices cho Points of Interest (tìm kiếm)
+CREATE INDEX poi_floor_idx ON points_of_interest(floor_id);
+CREATE INDEX poi_type_idx ON points_of_interest(poi_type);
+CREATE INDEX poi_category_idx ON points_of_interest(category_id);
+CREATE INDEX poi_search_idx ON points_of_interest USING GIN (to_tsvector('vietnamese', searchable_text));
+CREATE INDEX poi_name_trgm_idx ON points_of_interest USING GIN (name gin_trgm_ops);
+CREATE INDEX poi_coordinates_idx ON points_of_interest USING GIST (coordinates);
+
+-- Indices cho dữ liệu vị trí
+CREATE INDEX location_history_user_idx ON location_history(user_id, timestamp);
+CREATE INDEX location_history_floor_idx ON location_history(floor_id, timestamp);
+CREATE INDEX realtime_locations_user_idx ON realtime_locations(user_id);
+CREATE INDEX realtime_locations_floor_idx ON realtime_locations(floor_id);
+
+-- Indices cho zones
+CREATE INDEX zones_floor_idx ON zones(floor_id);
+CREATE INDEX zones_geom_idx ON zones USING GIST(coordinates);
+
+-- Indices cho navigation
+CREATE INDEX navigation_nodes_floor_idx ON navigation_nodes(floor_id);
+CREATE INDEX navigation_edges_from_idx ON navigation_edges(from_node_id);
+CREATE INDEX navigation_edges_to_idx ON navigation_edges(to_node_id);
+
+-- Indices cho analytics
+CREATE INDEX heatmap_floor_time_idx ON heatmap_data(floor_id, timestamp);
+CREATE INDEX traffic_flow_date_idx ON traffic_flow(date, time_range);
+CREATE INDEX dwell_time_zone_date_idx ON dwell_time(zone_id, date, hour);
+
+-- Tạo hypertable cho dữ liệu vị trí để tối ưu hóa time-series
+CREATE TABLE location_history_timeseries (
+    time TIMESTAMPTZ NOT NULL,
+    user_id INTEGER,
+    floor_id INTEGER,
+    x FLOAT,
+    y FLOAT,
+    accuracy FLOAT,
+    positioning_method VARCHAR(50)
+);
+
+-- Chuyển đổi thành hypertable
+SELECT create_hypertable('location_history_timeseries', 'time');
+
+-- Tạo các aggregation views cho phân tích
+CREATE MATERIALIZED VIEW location_stats_hourly
+WITH (timescaledb.continuous) AS
+SELECT
+    time_bucket('1 hour', time) AS bucket,
+    floor_id,
+    COUNT(DISTINCT user_id) AS unique_users,
+    COUNT(*) AS total_records,
+    AVG(accuracy) AS avg_accuracy
+FROM location_history_timeseries
+GROUP BY bucket, floor_id
+WITH NO DATA;
+
+-- Tạo policy để tự động refresh view
+SELECT add_continuous_aggregate_policy('location_stats_hourly',
+    start_offset => INTERVAL '1 day',
+    end_offset => INTERVAL '1 hour',
+    schedule_interval => INTERVAL '1 hour');
+
+-- Tạo retention policy để tự động xóa dữ liệu cũ
+SELECT add_retention_policy('location_history_timeseries', INTERVAL '90 days');
+
+-- Phân vùng bảng location_history theo thời gian
+CREATE TABLE location_history_partitioned (
+    id SERIAL,
+    user_id INTEGER REFERENCES users(id),
+    coordinates POINT,
+    floor_id INTEGER REFERENCES floors(id),
+    accuracy FLOAT,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    device_info JSONB,
+    positioning_method VARCHAR(50)
+) PARTITION BY RANGE (timestamp);
+
+-- Tạo phân vùng hàng tháng
+CREATE TABLE location_history_y2024m01 PARTITION OF location_history_partitioned
+    FOR VALUES FROM ('2024-01-01') TO ('2024-02-01');
+CREATE TABLE location_history_y2024m02 PARTITION OF location_history_partitioned
+    FOR VALUES FROM ('2024-02-01') TO ('2024-03-01');
+-- ... thêm các phân vùng tương tự cho các tháng tiếp theo
+
+-- Chuyển data từ bảng cũ sang bảng phân vùng
+INSERT INTO location_history_partitioned (user_id, coordinates, floor_id, accuracy, timestamp, device_info, positioning_method)
+SELECT user_id, coordinates, floor_id, accuracy, timestamp, device_info, positioning_method
+FROM location_history;
+
+-- Bảng chính sách quyền riêng tư
+CREATE TABLE privacy_policies (
+    id SERIAL PRIMARY KEY,
+    organization_id INTEGER REFERENCES organizations(id),
+    policy_version VARCHAR(20),
+    effective_date DATE,
+    retention_period INTEGER, -- Số ngày lưu trữ dữ liệu
+    location_tracking_consent BOOLEAN DEFAULT FALSE,
+    analytics_consent BOOLEAN DEFAULT FALSE,
+    marketing_consent BOOLEAN DEFAULT FALSE
+);
+
+-- Bảng đồng ý người dùng
+CREATE TABLE user_consents (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id),
+    policy_id INTEGER REFERENCES privacy_policies(id),
+    consent_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    ip_address VARCHAR(50),
+    consent_method VARCHAR(50), -- "app", "web", "api"
+    consented_to_tracking BOOLEAN DEFAULT FALSE,
+    consented_to_analytics BOOLEAN DEFAULT FALSE,
+    consented_to_marketing BOOLEAN DEFAULT FALSE
+);
+
+CREATE TABLE migrations (
+    id SERIAL PRIMARY KEY,
+    migration_id UUID DEFAULT uuid_generate_v4(),
+    version VARCHAR(50) NOT NULL,
+    description TEXT,
+    applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    applied_by VARCHAR(255),
+    script_content TEXT,
+    status VARCHAR(20) DEFAULT 'success',
+    rollback_script TEXT
+);
+
+
+
+-- Tạo cấu hình tìm kiếm tùy chỉnh cho tiếng Việt
+CREATE TEXT SEARCH CONFIGURATION vietnamese (COPY = simple);
+ALTER TEXT SEARCH CONFIGURATION vietnamese
+    ALTER MAPPING FOR hword, hword_part, word
+        WITH unaccent, simple;
+
+-- Hàm chuẩn hóa tiếng Việt (xóa dấu)
+CREATE OR REPLACE FUNCTION normalize_vietnamese(text)
+    RETURNS text AS $$
+SELECT unaccent($1);
+$$ LANGUAGE SQL IMMUTABLE;
+
+-- Bảng migrations
+CREATE TABLE migrations (
+                                       id SERIAL PRIMARY KEY,
+                                       migration_id UUID DEFAULT uuid_generate_v4(),
+                                       version VARCHAR(50) NOT NULL,
+                                       description TEXT,
+                                       applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                                       applied_by VARCHAR(255),
+                                       script_content TEXT,
+                                       status VARCHAR(20) DEFAULT 'success',
+                                       rollback_script TEXT
+);
+
+-- Function để áp dụng migration
+CREATE OR REPLACE FUNCTION apply_migration(
+    version_param VARCHAR(50),
+    description_param TEXT,
+    script_param TEXT,
+    rollback_param TEXT
+)
+    RETURNS VOID AS $$
+BEGIN
+-- Kiểm tra xem migration đã được áp dụng chưa
+IF EXISTS (SELECT 1 FROM migrations WHERE version = version_param) THEN
+        RAISE EXCEPTION 'Migration version % already applied', version_param;
+END IF;
+
+-- Thực thi script
+BEGIN
+EXECUTE script_param;
+
+-- Lưu thông tin migration
+INSERT INTO migrations (version, description, script_content, applied_by, rollback_script)
+VALUES (version_param, description_param, script_param, current_user, rollback_param);
+EXCEPTION WHEN OTHERS THEN
+        -- Ghi nhận lỗi
+INSERT INTO migrations (version, description, script_content, applied_by, status, rollback_script)
+VALUES (version_param, description_param, script_param, current_user, 'failed: ' || SQLERRM, rollback_param);
+
+RAISE;
+END;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function để rollback migration
+CREATE OR REPLACE FUNCTION rollback_migration(version_param VARCHAR(50))
+    RETURNS VOID AS $$
+DECLARE
+    rollback_script TEXT;
+BEGIN
+-- Lấy script rollback
+SELECT rollback_script INTO rollback_script
+FROM migrations
+WHERE version = version_param;
+
+IF rollback_script IS NULL THEN
+        RAISE EXCEPTION 'Migration version % not found or has no rollback script', version_param;
+END IF;
+
+-- Thực thi rollback
+BEGIN
+EXECUTE rollback_script;
+
+-- Cập nhật trạng thái
+UPDATE migrations
+SET status = 'rolled back'
+WHERE version = version_param;
+EXCEPTION WHEN OTHERS THEN
+        RAISE EXCEPTION 'Rollback failed: %', SQLERRM;
+END;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function cập nhật searchable_text cho points_of_interest
+CREATE OR REPLACE FUNCTION update_searchable_text()
+    RETURNS TRIGGER AS $$
+BEGIN
+NEW.searchable_text := NEW.name || ' ' || 
+                          COALESCE(NEW.subname, '') || ' ' || 
+                          COALESCE(NEW.description, '') || ' ' ||
+                          COALESCE(array_to_string(NEW.keywords, ' '), '') || ' ' || 
+                          COALESCE(array_to_string(NEW.aliases, ' '), '');
+    
+    -- Thêm phiên bản không dấu
+NEW.searchable_text := NEW.searchable_text || ' ' || normalize_vietnamese(NEW.searchable_text);
+
+RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function theo dõi di chuyển giữa các zone
+CREATE OR REPLACE FUNCTION track_zone_transitions()
+    RETURNS TRIGGER AS $$
+DECLARE
+    old_zone_id INTEGER;
+new_zone_id INTEGER;
+BEGIN
+    -- Tìm zone cũ
+SELECT z.id INTO old_zone_id
+FROM zones z
+WHERE ST_Contains(z.coordinates, OLD.coordinates) AND z.floor_id = OLD.floor_id
+LIMIT 1;
+
+-- Tìm zone mới
+SELECT z.id INTO new_zone_id
+FROM zones z
+WHERE ST_Contains(z.coordinates, NEW.coordinates) AND z.floor_id = NEW.floor_id
+LIMIT 1;
+
+-- Nếu di chuyển giữa các zone
+IF old_zone_id IS DISTINCT FROM new_zone_id THEN
+        -- Nếu rời khỏi một zone
+        IF old_zone_id IS NOT NULL AND new_zone_id IS NULL THEN
+INSERT INTO zone_alerts (user_id, zone_id, alert_type)
+VALUES (NEW.user_id, old_zone_id, 'exited');
+END IF;
+
+-- Nếu vào một zone mới
+IF new_zone_id IS NOT NULL AND old_zone_id IS NULL THEN
+INSERT INTO zone_alerts (user_id, zone_id, alert_type)
+VALUES (NEW.user_id, new_zone_id, 'entered');
+END IF;
+
+-- Nếu di chuyển giữa các zone
+IF old_zone_id IS NOT NULL AND new_zone_id IS NOT NULL THEN
+INSERT INTO zone_alerts (user_id, zone_id, alert_type)
+VALUES (NEW.user_id, old_zone_id, 'exited');
+
+INSERT INTO zone_alerts (user_id, zone_id, alert_type)
+VALUES (NEW.user_id, new_zone_id, 'entered');
+END IF;
+END IF;
+
+RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function tìm đường đi ngắn nhất
+CREATE OR REPLACE FUNCTION find_shortest_path(
+    start_poi_id INTEGER,
+    end_poi_id INTEGER,
+    accessibility_required BOOLEAN DEFAULT FALSE
+)
+    RETURNS TABLE (
+                      path_node_ids INTEGER[],
+                      total_distance FLOAT,
+                      estimated_time INTEGER,
+                      floor_transitions INTEGER[]
+                  ) AS $$
+DECLARE
+    start_node_id INTEGER;
+end_node_id INTEGER;
+BEGIN
+    -- Tìm node gần nhất với điểm bắt đầu
+SELECT id INTO start_node_id
+FROM navigation_nodes n
+         JOIN points_of_interest p ON n.floor_id = p.floor_id
+WHERE p.id = start_poi_id
+ORDER BY ST_Distance(n.coordinates, p.coordinates) ASC
+LIMIT 1;
+
+-- Tìm node gần nhất với điểm kết thúc
+SELECT id INTO end_node_id
+FROM navigation_nodes n
+         JOIN points_of_interest p ON n.floor_id = p.floor_id
+WHERE p.id = end_poi_id
+ORDER BY ST_Distance(n.coordinates, p.coordinates) ASC
+LIMIT 1;
+
+-- Thực hiện tìm đường đi ngắn nhất
+RETURN QUERY
+WITH path AS (
+    SELECT
+        nav_edge.from_node_id AS node_id,
+        nav_edge.to_node_id AS next_node_id,
+        nav_edge.distance AS edge_cost,
+        n.floor_id
+    FROM
+        navigation_edges nav_edge
+            JOIN
+        navigation_nodes n ON nav_edge.from_node_id = n.id
+    WHERE
+        (NOT accessibility_required OR nav_edge.accessibility)
+),
+     path_with_ranks AS (
+         SELECT
+             node_id,
+             next_node_id,
+             edge_cost,
+             floor_id,
+             1 AS path_rank
+         FROM
+             path
+         WHERE
+             node_id = start_node_id
+         UNION ALL
+         SELECT
+             p.node_id,
+             p.next_node_id,
+             p.edge_cost,
+             p.floor_id,
+             pwr.path_rank + 1
+         FROM
+             path p
+                 JOIN
+             path_with_ranks pwr ON p.node_id = pwr.next_node_id
+         WHERE
+             pwr.path_rank < 100 -- Giới hạn tránh vòng lặp vô hạn
+     )
+SELECT
+    ARRAY_AGG(node_id ORDER BY path_rank) AS path_node_ids,
+    SUM(edge_cost) AS total_distance,
+    (SUM(edge_cost) / 1.2)::INTEGER AS estimated_time,
+    ARRAY_AGG(DISTINCT floor_id) AS floor_transitions
+FROM
+    path_with_ranks
+WHERE
+    EXISTS (
+        SELECT 1 FROM path_with_ranks
+        WHERE next_node_id = end_node_id
+    );
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function tạo dữ liệu heatmap
+CREATE OR REPLACE FUNCTION generate_heatmap_data(floor_id_param INTEGER, date_param DATE)
+    RETURNS VOID AS $$
+BEGIN
+-- Xóa dữ liệu heatmap cũ cho tầng và ngày đã chọn
+DELETE FROM heatmap_data
+WHERE floor_id = floor_id_param AND DATE(timestamp) = date_param;
+
+-- Tạo dữ liệu heatmap mới từ lịch sử vị trí
+INSERT INTO heatmap_data (floor_id, coordinates, density, timestamp, duration)
+SELECT
+    floor_id_param,
+    ST_SnapToGrid(coordinates, 2), -- Nhóm theo lưới 2m
+    COUNT(*) AS density,
+    date_param + INTERVAL '1 hour' * EXTRACT(HOUR FROM timestamp) AS timestamp,
+    AVG(EXTRACT(EPOCH FROM lead_time - timestamp)) AS duration
+FROM (
+         SELECT
+             coordinates,
+             timestamp,
+             LEAD(timestamp) OVER (PARTITION BY user_id ORDER BY timestamp) AS lead_time
+         FROM location_history
+         WHERE floor_id = floor_id_param AND DATE(timestamp) = date_param
+     ) AS loc_with_duration
+WHERE lead_time IS NOT NULL
+GROUP BY ST_SnapToGrid(coordinates, 2), EXTRACT(HOUR FROM timestamp);
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function tìm kiếm địa điểm
+CREATE OR REPLACE FUNCTION search_locations(
+    search_text TEXT,
+    floor INTEGER DEFAULT NULL,
+    category INTEGER DEFAULT NULL,
+    user_id INTEGER DEFAULT NULL,
+    organization_id INTEGER DEFAULT NULL,
+    sort_by TEXT DEFAULT 'relevance',
+    limit_results INTEGER DEFAULT 20
+)
+    RETURNS TABLE (
+                      id INTEGER,
+                      name VARCHAR,
+                      floor_id INTEGER,
+                      floor_name VARCHAR,
+                      poi_type VARCHAR,
+                      category_name VARCHAR,
+                      coordinates POINT,
+                      rank FLOAT,
+                      distance FLOAT
+                  ) AS $$
+BEGIN
+RETURN QUERY
+WITH user_location AS (
+    SELECT rl.coordinates, rl.floor_id
+    FROM realtime_locations rl
+    WHERE rl.user_id = user_id
+    ORDER BY rl.last_updated DESC
+    LIMIT 1
+)
+SELECT
+    p.id,
+    p.name,
+    p.floor_id,
+    f.floor_name,
+    p.poi_type,
+    c.name as category_name,
+    p.coordinates,
+    CASE WHEN search_text IS NOT NULL
+             THEN ts_rank(to_tsvector('vietnamese', p.searchable_text),
+                          to_tsquery('vietnamese',
+                                     regexp_replace(normalize_vietnamese(search_text), '[\s]+', ':* & ', 'g') || ':*'
+                          )
+                  )
+         ELSE 1.0
+        END AS rank,
+    CASE WHEN ul.coordinates IS NOT NULL AND p.floor_id = ul.floor_id
+             THEN ST_Distance(p.coordinates, ul.coordinates)
+         ELSE 9999
+        END AS distance
+FROM points_of_interest p
+         JOIN floors f ON p.floor_id = f.id
+         JOIN buildings b ON f.building_id = b.id
+         LEFT JOIN poi_categories c ON p.category_id = c.id
+         LEFT JOIN user_location ul ON TRUE
+WHERE
+    p.is_searchable = TRUE
+  AND (
+    search_text IS NULL
+        OR
+    p.searchable_text ILIKE '%' || search_text || '%'
+        OR
+    p.searchable_text % normalize_vietnamese(search_text)
+        OR
+    to_tsvector('vietnamese', p.searchable_text) @@ to_tsquery(
+            'vietnamese',
+            regexp_replace(normalize_vietnamese(search_text), '[\s]+', ':* & ', 'g') || ':*'
+        )
+    )
+  AND (floor IS NULL OR p.floor_id = floor)
+  AND (category IS NULL OR p.category_id = category)
+  AND b.organization_id = organization_id
+ORDER BY
+    CASE WHEN sort_by = 'relevance' THEN rank END DESC,
+    CASE WHEN sort_by = 'distance' THEN distance END ASC,
+    p.search_priority DESC,
+    p.name ASC
+LIMIT limit_results;
+
+-- Log search for analytics
+IF user_id IS NOT NULL AND search_text IS NOT NULL THEN
+INSERT INTO search_history (user_id, search_query, result_count, organization_id)
+SELECT
+    user_id,
+    search_text,
+    COUNT(*),
+    organization_id
+FROM points_of_interest p
+         JOIN floors f ON p.floor_id = f.id
+         JOIN buildings b ON f.building_id = b.id
+WHERE
+    p.searchable_text ILIKE '%' || search_text || '%'
+  AND b.organization_id = organization_id;
+END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function tìm kiếm cho bệnh viện
+CREATE OR REPLACE FUNCTION search_hospital_departments(
+    search_text TEXT,
+    specialty VARCHAR DEFAULT NULL
+)
+    RETURNS TABLE (
+                      poi_id INTEGER,
+                      department_name VARCHAR,
+                      floor_name VARCHAR,
+                      doctor_name VARCHAR,
+                      doctor_specialty VARCHAR,
+                      availability BOOLEAN
+                  ) AS $$
+BEGIN
+RETURN QUERY
+SELECT
+    p.id AS poi_id,
+    hd.department_name,
+    f.floor_name,
+    d.doctor_name,
+    d.specialty AS doctor_specialty,
+    d.availability
+FROM points_of_interest p
+         JOIN hospital_departments hd ON p.id = hd.poi_id
+         JOIN floors f ON p.floor_id = f.id
+         LEFT JOIN doctors d ON hd.id = d.department_id
+WHERE
+    (search_text IS NULL OR p.searchable_text ILIKE '%' || search_text || '%')
+  AND (specialty IS NULL OR d.specialty = specialty);
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function tìm kiếm cho trường đại học
+CREATE OR REPLACE FUNCTION search_campus_rooms(
+    search_text TEXT,
+    event_date DATE DEFAULT CURRENT_DATE
+)
+    RETURNS TABLE (
+                      poi_id INTEGER,
+                      room_name VARCHAR,
+                      floor_name VARCHAR,
+                      course_name VARCHAR,
+                      professor VARCHAR,
+                      start_time TIME,
+                      end_time TIME
+                  ) AS $$
+BEGIN
+RETURN QUERY
+SELECT
+    p.id AS poi_id,
+    p.name AS room_name,
+    f.floor_name,
+    cs.course_name,
+    cs.professor,
+    cs.start_time,
+    cs.end_time
+FROM points_of_interest p
+         JOIN floors f ON p.floor_id = f.id
+         LEFT JOIN class_schedules cs ON p.id = cs.room_id AND cs.class_date = event_date
+WHERE search_text IS NULL OR p.searchable_text ILIKE '%' || search_text || '%'
+ORDER BY
+    CASE WHEN cs.start_time IS NOT NULL
+             THEN cs.start_time - CURRENT_TIME
+         ELSE INTERVAL '999 days'
+        END;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function tìm kiếm cho trung tâm thương mại
+CREATE OR REPLACE FUNCTION search_mall_stores(
+    search_text TEXT,
+    has_promotion BOOLEAN DEFAULT FALSE
+)
+    RETURNS TABLE (
+                      poi_id INTEGER,
+                      store_name VARCHAR,
+                      brand_name VARCHAR,
+                      category VARCHAR,
+                      floor_name VARCHAR,
+                      has_active_promotion BOOLEAN,
+                      promotion_title VARCHAR,
+                      discount_rate FLOAT
+                  ) AS $$
+BEGIN
+RETURN QUERY
+SELECT
+    p.id AS poi_id,
+    p.name AS store_name,
+    s.brand_name,
+    s.category,
+    f.floor_name,
+    CASE WHEN pr.id IS NOT NULL THEN TRUE ELSE FALSE END AS has_active_promotion,
+    pr.promotion_title,
+    pr.discount_rate
+FROM points_of_interest p
+         JOIN store_information s ON p.id = s.poi_id
+         JOIN floors f ON p.floor_id = f.id
+         LEFT JOIN promotions pr ON s.id = pr.store_id
+    AND pr.start_date <= CURRENT_DATE
+    AND pr.end_date >= CURRENT_DATE
+WHERE
+    (search_text IS NULL OR p.searchable_text ILIKE '%' || search_text || '%')
+  AND (NOT has_promotion OR pr.id IS NOT NULL)
+ORDER BY
+    CASE WHEN pr.id IS NOT NULL THEN 0 ELSE 1 END,
+    s.popularity_score DESC;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function để mã hóa dữ liệu nhạy cảm
+CREATE OR REPLACE FUNCTION encrypt_sensitive_data(data TEXT, key TEXT)
+    RETURNS TEXT AS $$
+BEGIN
+RETURN encode(encrypt(data::bytea, key::bytea, 'aes'), 'base64');
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function để giải mã dữ liệu
+CREATE OR REPLACE FUNCTION decrypt_sensitive_data(encrypted_data TEXT, key TEXT)
+    RETURNS TEXT AS $$
+BEGIN
+RETURN convert_from(decrypt(decode(encrypted_data, 'base64'), key::bytea, 'aes'), 'utf8');
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function tạo định danh POI
+CREATE OR REPLACE FUNCTION generate_poi_slug()
+    RETURNS TRIGGER AS $$
+DECLARE
+    base_slug TEXT;
+final_slug TEXT;
+counter INTEGER := 0;
+BEGIN
+    -- Tạo slug cơ bản từ tên POI
+base_slug := lower(regexp_replace(normalize_vietnamese(NEW.name), '[^a-zA-Z0-9]+', '-', 'g'));
+    
+    -- Loại bỏ '-' ở đầu và cuối
+base_slug := trim(both '-' from base_slug);
+    
+    -- Nếu slug rỗng, sử dụng 'poi' + id
+IF base_slug = '' THEN
+        base_slug := 'poi';
+END IF;
+
+-- Gán slug ban đầu
+final_slug := base_slug;
+    
+    -- Kiểm tra xem slug đã tồn tại chưa, nếu có thì thêm số
+WHILE EXISTS (
+        SELECT 1 FROM points_of_interest 
+        WHERE slug = final_slug AND id != COALESCE(NEW.id, 0)
+    ) LOOP
+        counter := counter + 1;
+final_slug := base_slug || '-' || counter::TEXT;
+END LOOP;
+
+NEW.slug := final_slug;
+RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function để tăng counter khi POI được xem/tìm kiếm
+CREATE OR REPLACE FUNCTION increment_poi_view_count(poi_id_param INTEGER)
+    RETURNS VOID AS $$
+BEGIN
+-- Increment view count
+UPDATE points_of_interest
+SET view_count = COALESCE(view_count, 0) + 1,
+    last_viewed_at = CURRENT_TIMESTAMP
+WHERE id = poi_id_param;
+
+-- Update popular destinations
+INSERT INTO popular_destinations (
+    poi_id,
+    organization_id,
+    visit_count,
+    last_updated
+)
+SELECT
+    p.id,
+    b.organization_id,
+    1,
+    CURRENT_TIMESTAMP
+FROM
+    points_of_interest p
+        JOIN floors f ON p.floor_id = f.id
+        JOIN buildings b ON f.building_id = b.id
+WHERE
+    p.id = poi_id_param
+ON CONFLICT (poi_id, organization_id) DO UPDATE
+    SET
+        visit_count = popular_destinations.visit_count + 1,
+        last_updated = CURRENT_TIMESTAMP;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function để ẩn danh dữ liệu vị trí cũ
+CREATE OR REPLACE FUNCTION anonymize_location_data(days INTEGER)
+    RETURNS VOID AS $$
+BEGIN
+-- Cập nhật dữ liệu vị trí cũ
+UPDATE location_history
+SET user_id = NULL,
+    device_info = jsonb_build_object('anonymized', TRUE, 'anonymized_at', NOW())
+WHERE timestamp < NOW() - (days || ' days')::INTERVAL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function xóa dữ liệu vị trí cũ
+CREATE OR REPLACE FUNCTION delete_old_location_data(organization_id_param INTEGER)
+    RETURNS VOID AS $$
+DECLARE
+    retention_days INTEGER;
+BEGIN
+-- Lấy thời gian lưu trữ từ chính sách
+SELECT retention_period INTO retention_days
+FROM privacy_policies
+WHERE organization_id = organization_id_param
+ORDER BY effective_date DESC
+LIMIT 1;
+
+-- Nếu không có chính sách, sử dụng giá trị mặc định (90 ngày)
+IF retention_days IS NULL THEN
+        retention_days := 90;
+END IF;
+
+-- Xóa dữ liệu cũ
+DELETE FROM location_history
+WHERE timestamp < NOW() - (retention_days || ' days')::INTERVAL
+  AND user_id IN (
+    SELECT id FROM users WHERE organization_id = organization_id_param
+);
+END;
+$$ LANGUAGE plpgsql;
+

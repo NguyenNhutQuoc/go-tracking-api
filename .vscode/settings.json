@@ -1,0 +1,13 @@
+{
+  "sqltools.connections": [
+    {
+      "previewLimit": 50,
+      "server": "localhost",
+      "port": 5432,
+      "driver": "PostgreSQL",
+      "name": "GoTrackings",
+      "database": "gotracking_db",
+      "username": "gotracking"
+    }
+  ]
+}
