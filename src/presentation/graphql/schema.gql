@@ -1,0 +1,21 @@
+# ------------------------------------------------------
+# THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
+# ------------------------------------------------------
+
+"""Coordinates custom scalar type"""
+scalar Coordinates
+
+"""Date custom scalar type"""
+scalar Date
+
+type Query {
+  user: User
+  users: [User!]!
+}
+
+type User {
+  createdAt: Date!
+  email: String!
+  id: ID!
+  name: String!
+}

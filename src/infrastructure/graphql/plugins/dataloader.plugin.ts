@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/require-await */
 import { Plugin } from '@nestjs/apollo';
 import { ApolloServerPlugin, GraphQLRequestListener } from '@apollo/server';
-import DataLoader from 'dataloader';
+import * as DataLoader from 'dataloader';
 
 // Define your context type
 interface MyContext {
