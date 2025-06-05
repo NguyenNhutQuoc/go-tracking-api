@@ -28,8 +28,7 @@ export class DatabaseConfig implements TypeOrmOptionsFactory {
           '../infrastructure/database/typeorm/migrations/*{.ts,.js}',
         ),
       ],
-      synchronize:
-        this.configService.get<string>('app.nodeEnv') === 'development',
+      synchronize: false,
       logging: this.configService.get<string>('app.nodeEnv') === 'development',
       ssl: this.configService.get<string>('app.nodeEnv') === 'production',
     };

@@ -19,7 +19,7 @@ export abstract class BaseTypeormRepository<
     ) => TypeormEntity,
   ) {}
 
-  async findById(id: string): Promise<DomainEntity | null> {
+  async findById(id: number): Promise<DomainEntity | null> {
     const typeormEntity = await this.repository.findOne({
       where: { id } as unknown as Parameters<
         typeof this.repository.findOne
@@ -54,7 +54,7 @@ export abstract class BaseTypeormRepository<
     return this.toEntity(savedTypeormEntity);
   }
 
-  async update(id: string, data: Partial<DomainEntity>): Promise<DomainEntity> {
+  async update(id: number, data: Partial<DomainEntity>): Promise<DomainEntity> {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     await this.repository.update(id, this.toTypeorm(data) as any);
     const updatedTypeormEntity = await this.repository.findOne({
@@ -68,7 +68,7 @@ export abstract class BaseTypeormRepository<
     return this.toEntity(updatedTypeormEntity);
   }
 
-  async delete(id: string): Promise<boolean> {
+  async delete(id: number): Promise<boolean> {
     const result = await this.repository.delete(id);
     return (
       result.affected !== undefined &&

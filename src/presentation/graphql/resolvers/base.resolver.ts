@@ -17,7 +17,7 @@ export function BaseResolver<T, DTO, CreateInput, UpdateInput>(
     ) {}
 
     @Query(() => classRef, { name: `get${name}` })
-    async findById(@Args('id', { type: () => ID }) id: string): Promise<T> {
+    async findById(@Args('id', { type: () => ID }) id: number): Promise<T> {
       const entity = await this.repository.findById(id);
       if (!entity) {
         throw new Error(`${name} not found`);
@@ -50,7 +50,7 @@ export function BaseResolver<T, DTO, CreateInput, UpdateInput>(
 
     @Mutation(() => classRef, { name: `update${name}` })
     async update(
-      @Args('id', { type: () => ID }) id: string,
+      @Args('id', { type: () => ID }) id: number,
       @Args('input') updateInput: UpdateInput,
     ): Promise<T> {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
@@ -59,7 +59,7 @@ export function BaseResolver<T, DTO, CreateInput, UpdateInput>(
     }
 
     @Mutation(() => Boolean, { name: `delete${name}` })
-    async delete(@Args('id', { type: () => ID }) id: string): Promise<boolean> {
+    async delete(@Args('id', { type: () => ID }) id: number): Promise<boolean> {
       return this.repository.delete(id);
     }
   }

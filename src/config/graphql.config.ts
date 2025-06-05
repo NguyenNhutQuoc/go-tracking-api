@@ -1,7 +1,6 @@
 import { ApolloDriverConfig } from '@nestjs/apollo';
 import { join } from 'path';
 import { DataLoaderPlugin } from '../infrastructure/graphql/plugins/dataloader.plugin';
-
 export const graphqlConfig: ApolloDriverConfig = {
   autoSchemaFile: join(process.cwd(), 'src/presentation/graphql/schema.gql'),
   sortSchema: true,

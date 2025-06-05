@@ -2,20 +2,173 @@
 # THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
 # ------------------------------------------------------
 
+type AuthResult {
+  accessToken: String!
+  expiresIn: Float!
+  refreshToken: String!
+  user: User!
+}
+
+input ChangePasswordInput {
+  currentPassword: String!
+  newPassword: String!
+}
+
 """Coordinates custom scalar type"""
 scalar Coordinates
 
 """Date custom scalar type"""
 scalar Date
 
+input ForgotPasswordInput {
+  email: String!
+  organizationId: ID
+}
+
+input LoginInput {
+  email: String!
+  organizationId: ID
+  password: String!
+}
+
+type MessageResponse {
+  message: String!
+}
+
+type Mutation {
+  changePassword(input: ChangePasswordInput!): MessageResponse!
+  deleteUser(id: ID!): MessageResponse!
+  forgotPassword(input: ForgotPasswordInput!): MessageResponse!
+  login(input: LoginInput!): AuthResult!
+  refreshToken(input: RefreshTokenInput!): AuthResult!
+  register(input: RegisterInput!): MessageResponse!
+  resetPassword(input: ResetPasswordInput!): MessageResponse!
+  restoreUser(id: ID!): MessageResponse!
+  sendEmailVerification(input: SendOtpInput!): MessageResponse!
+  sendOtp(input: SendOtpInput!): MessageResponse!
+  updateMyProfile(input: UpdateUserInput!): User!
+  updateUser(id: ID!, input: UpdateUserInput!): User!
+  verifyEmail(input: VerifyOtpInput!): MessageResponse!
+}
+
+"""Type of OTP verification"""
+enum OtpType {
+  EMAIL_VERIFICATION
+  LOGIN_2FA
+  PASSWORD_RESET
+  PHONE_VERIFICATION
+}
+
+input PaginationInput {
+  limit: Int! = 10
+  page: Int! = 1
+}
+
+type PaginationMeta {
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  limit: Int!
+  page: Int!
+  totalItems: Int!
+  totalPages: Int!
+}
+
 type Query {
-  user: User
-  users: [User!]!
+  activeUserCount: Float!
+  checkOtpRateLimit(email: String!, type: OtpType!): RateLimitInfo!
+  me: User!
+  user(id: ID!): User
+  userCount(role: UserRole): Float!
+  users(filters: UserFiltersInput): [User!]!
+  usersPaginated(filters: UserFiltersInput, pagination: PaginationInput!): UserPaginatedResponse!
+  whoAmI: MessageResponse!
+}
+
+type RateLimitInfo {
+  allowed: Boolean!
+  remainingRequests: Float!
+  resetTime: Date!
+}
+
+input RefreshTokenInput {
+  refreshToken: String!
+}
+
+input RegisterInput {
+  email: String!
+  fullName: String!
+  organizationId: Float!
+  password: String!
+  phone: String
+  role: UserRole = VISITOR
+}
+
+input ResetPasswordInput {
+  email: String!
+  newPassword: String!
+  otp: String!
+}
+
+input SendOtpInput {
+  email: String!
+  type: OtpType!
+}
+
+input UpdateUserInput {
+  fullName: String
+  isActive: Boolean
+  phone: String
+  role: UserRole
+  status: UserStatus
 }
 
 type User {
   createdAt: Date!
   email: String!
+  emailVerified: Boolean!
+  fullName: String!
   id: ID!
-  name: String!
+  isActive: Boolean!
+  lastLogin: Date
+  organizationId: ID!
+  phone: String
+  phoneVerified: Boolean!
+  role: UserRole!
+  status: UserStatus!
+  updatedAt: Date!
+}
+
+input UserFiltersInput {
+  emailVerified: Boolean
+  isActive: Boolean
+  organizationId: ID
+  role: UserRole
+  search: String
+  status: UserStatus
+}
+
+type UserPaginatedResponse {
+  items: [User!]!
+  meta: PaginationMeta!
+}
+
+"""User role in the organization"""
+enum UserRole {
+  ADMIN
+  STAFF
+  VISITOR
+}
+
+"""User account status"""
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  PENDING
+  SUSPENDED
+}
+
+input VerifyOtpInput {
+  email: String!
+  otp: String!
+  type: OtpType!
 }
