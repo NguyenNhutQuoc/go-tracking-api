@@ -1,27 +1,25 @@
-// src/presentation/graphql/inputs/user.input.ts
 import { InputType, Field, ID } from '@nestjs/graphql';
 import {
-  IsEmail,
   IsString,
   IsOptional,
   MinLength,
   MaxLength,
   IsEnum,
-  IsUUID,
-  IsBoolean,
   IsNumber,
+  IsEmail,
 } from 'class-validator';
-import {
-  UserRole,
-  UserStatus,
-} from '../../../core/domain/entities/user.entity';
+import { IsPhoneNumber } from '../../../infrastructure/decorators/phone-validation.decorator';
+import { UserRole } from '../../../core/domain/entities/user.entity';
 import { OtpType } from '../../../infrastructure/services/otp/otp.service';
+import { Transform } from 'class-transformer';
+import { PhoneUtil } from '../../../infrastructure/utils/phone.util';
 
 @InputType()
 export class LoginInput {
-  @Field()
-  @IsEmail()
-  email: string;
+  @Field({ description: 'Phone number (+84xxxxxxxxx)' })
+  @IsPhoneNumber()
+  @Transform(({ value }) => PhoneUtil.normalize(value))
+  phone: string;
 
   @Field()
   @IsString()
@@ -30,15 +28,16 @@ export class LoginInput {
 
   @Field(() => ID, { nullable: true })
   @IsOptional()
-  @IsUUID()
+  @IsNumber()
   organizationId?: number;
 }
 
 @InputType()
 export class RegisterInput {
-  @Field()
-  @IsEmail()
-  email: string;
+  @Field({ description: 'Phone number (+84xxxxxxxxx)' })
+  @IsPhoneNumber()
+  @Transform(({ value }) => PhoneUtil.normalize(value))
+  phone: string;
 
   @Field()
   @IsString()
@@ -52,11 +51,10 @@ export class RegisterInput {
   @MaxLength(100)
   fullName: string;
 
-  @Field({ nullable: true })
+  @Field({ nullable: true, description: 'Optional email address' })
   @IsOptional()
-  @IsString()
-  @MaxLength(20)
-  phone?: string;
+  @IsEmail()
+  email?: string;
 
   @Field()
   @IsNumber()
@@ -70,9 +68,10 @@ export class RegisterInput {
 
 @InputType()
 export class VerifyOtpInput {
-  @Field()
-  @IsEmail()
-  email: string;
+  @Field({ description: 'Phone number' })
+  @IsPhoneNumber()
+  @Transform(({ value }) => PhoneUtil.normalize(value))
+  phone: string;
 
   @Field()
   @IsString()
@@ -87,21 +86,18 @@ export class VerifyOtpInput {
 
 @InputType()
 export class ForgotPasswordInput {
-  @Field()
-  @IsEmail()
-  email: string;
-
-  @Field(() => ID, { nullable: true })
-  @IsOptional()
-  @IsUUID()
-  organizationId?: number;
+  @Field({ description: 'Phone number' })
+  @IsPhoneNumber()
+  @Transform(({ value }) => PhoneUtil.normalize(value))
+  phone: string;
 }
 
 @InputType()
 export class ResetPasswordInput {
-  @Field()
-  @IsEmail()
-  email: string;
+  @Field({ description: 'Phone number' })
+  @IsPhoneNumber()
+  @Transform(({ value }) => PhoneUtil.normalize(value))
+  phone: string;
 
   @Field()
   @IsString()
@@ -117,96 +113,13 @@ export class ResetPasswordInput {
 }
 
 @InputType()
-export class RefreshTokenInput {
-  @Field()
-  @IsString()
-  refreshToken: string;
-}
-
-@InputType()
 export class SendOtpInput {
-  @Field()
-  @IsEmail()
-  email: string;
+  @Field({ description: 'Phone number' })
+  @IsPhoneNumber()
+  @Transform(({ value }) => PhoneUtil.normalize(value))
+  phone: string;
 
   @Field(() => OtpType)
   @IsEnum(OtpType)
   type: OtpType;
-}
-
-@InputType()
-export class UpdateUserInput {
-  @Field({ nullable: true })
-  @IsOptional()
-  @IsString()
-  @MinLength(2)
-  @MaxLength(100)
-  fullName?: string;
-
-  @Field({ nullable: true })
-  @IsOptional()
-  @IsString()
-  @MaxLength(20)
-  phone?: string;
-
-  @Field(() => UserRole, { nullable: true })
-  @IsOptional()
-  @IsEnum(UserRole)
-  role?: UserRole;
-
-  @Field(() => UserStatus, { nullable: true })
-  @IsOptional()
-  @IsEnum(UserStatus)
-  status?: UserStatus;
-
-  @Field({ nullable: true })
-  @IsOptional()
-  @IsBoolean()
-  isActive?: boolean;
-}
-
-@InputType()
-export class UserFiltersInput {
-  @Field(() => ID, { nullable: true })
-  @IsOptional()
-  @IsUUID()
-  organizationId?: number;
-
-  @Field(() => UserRole, { nullable: true })
-  @IsOptional()
-  @IsEnum(UserRole)
-  role?: UserRole;
-
-  @Field(() => UserStatus, { nullable: true })
-  @IsOptional()
-  @IsEnum(UserStatus)
-  status?: UserStatus;
-
-  @Field({ nullable: true })
-  @IsOptional()
-  @IsBoolean()
-  isActive?: boolean;
-
-  @Field({ nullable: true })
-  @IsOptional()
-  @IsBoolean()
-  emailVerified?: boolean;
-
-  @Field({ nullable: true })
-  @IsOptional()
-  @IsString()
-  search?: string;
-}
-
-@InputType()
-export class ChangePasswordInput {
-  @Field()
-  @IsString()
-  currentPassword: string;
-
-  @Field()
-  @IsString()
-  @MinLength(8)
-  @MaxLength(50)
-  newPassword: string;
 }

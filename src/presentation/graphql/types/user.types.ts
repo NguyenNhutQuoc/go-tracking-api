@@ -1,13 +1,10 @@
-// src/presentation/graphql/types/user.type.ts
 import { ObjectType, Field, ID, registerEnumType } from '@nestjs/graphql';
 import {
   UserRole,
   UserStatus,
 } from '../../../core/domain/entities/user.entity';
 import { OtpType } from '../../../infrastructure/services/otp/otp.service';
-import { PaginationMeta } from './pagination.type';
 
-// Register enums for GraphQL
 registerEnumType(UserRole, {
   name: 'UserRole',
   description: 'User role in the organization',
@@ -28,14 +25,14 @@ export class User {
   @Field(() => ID)
   id: number;
 
-  @Field()
-  email: string;
+  @Field({ description: 'Phone number (+84xxxxxxxxx)' })
+  phone: string;
 
   @Field()
   fullName: string;
 
-  @Field({ nullable: true })
-  phone?: string;
+  @Field({ nullable: true, description: 'Optional email address' })
+  email?: string;
 
   @Field(() => UserRole)
   role: UserRole;
@@ -46,11 +43,11 @@ export class User {
   @Field()
   isActive: boolean;
 
-  @Field()
-  emailVerified: boolean;
+  @Field({ description: 'Phone number verification status' })
+  phoneVerified: boolean;
 
   @Field()
-  phoneVerified: boolean;
+  emailVerified: boolean;
 
   @Field({ nullable: true })
   lastLogin?: Date;
@@ -63,8 +60,6 @@ export class User {
 
   @Field(() => ID)
   organizationId: number;
-
-  // Don't expose sensitive fields like passwordHash, tokens, etc.
 }
 
 @ObjectType()
@@ -98,13 +93,4 @@ export class RateLimitInfo {
 
   @Field()
   resetTime: Date;
-}
-
-@ObjectType()
-export class UserPaginatedResponse {
-  @Field(() => [User])
-  items: User[];
-
-  @Field(() => PaginationMeta)
-  meta: PaginationMeta;
 }

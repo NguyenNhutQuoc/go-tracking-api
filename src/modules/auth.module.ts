@@ -1,4 +1,3 @@
-// src/modules/auth.module.ts
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
@@ -18,32 +17,26 @@ import {
   USER_REPOSITORY_TOKEN,
 } from '../core/application/services/auth.service';
 import { OtpService } from '../infrastructure/services/otp/otp.service';
-import { NotificationService } from '../infrastructure/services/notification/notification.service';
+import { SmsService } from '../infrastructure/services/sms/sms.service';
 import { UserDataLoaderService } from '../infrastructure/dataloader/user.dataloader';
 
 // Resolvers
 import { AuthResolver } from '../presentation/graphql/resolvers/auth.resolver';
 import { UserResolver } from '../presentation/graphql/resolvers/user.resolver';
 
-// Guards
+// Guards & Strategies
 import { JwtAuthGuard } from '../presentation/guards/jwt-auth.guard';
 import { RolesGuard } from '../presentation/guards/roles.guard';
+import { JwtStrategy } from '../infrastructure/auth/strategies/jwt.strategy';
 
 // Cache Module
 import { CacheModule } from '../infrastructure/modules/cache.module';
-import { JwtStrategy } from 'src/infrastructure/auth/strategies/jwt.strategy';
-import { BrevoEmailService } from 'src/infrastructure/services/email/brevo-email.service';
 
 @Module({
   imports: [
-    // Import required modules
     ConfigModule,
     CacheModule,
-
-    // TypeORM entities
     TypeOrmModule.forFeature([UserTypeormEntity, OrganizationTypeormEntity]),
-
-    // JWT configuration
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
@@ -57,13 +50,10 @@ import { BrevoEmailService } from 'src/infrastructure/services/email/brevo-email
       }),
       inject: [ConfigService],
     }),
-
-    // Passport configuration
     PassportModule.register({ defaultStrategy: 'jwt' }),
   ],
-
   providers: [
-    // Repository implementations
+    // Repository
     {
       provide: USER_REPOSITORY_TOKEN,
       useClass: UserTypeormRepository,
@@ -72,33 +62,25 @@ import { BrevoEmailService } from 'src/infrastructure/services/email/brevo-email
     // Services
     AuthService,
     OtpService,
+    SmsService,
     UserDataLoaderService,
 
-    // ✅ Email Services
-    BrevoEmailService, // Add Brevo email service
-    NotificationService, // Updated notification service
-
-    // GraphQL Resolvers
+    // Resolvers
     AuthResolver,
     UserResolver,
 
-    // Guards
+    // Guards & Strategies
     JwtAuthGuard,
     RolesGuard,
-
-    // Strategies
     JwtStrategy,
   ],
-
   exports: [
-    // Export services that might be used in other modules
     AuthService,
     USER_REPOSITORY_TOKEN,
     JwtAuthGuard,
     RolesGuard,
     UserDataLoaderService,
-    BrevoEmailService, // ✅ Export Brevo service
-    NotificationService, // ✅ Export notification service
+    SmsService,
   ],
 })
 export class AuthModule {}

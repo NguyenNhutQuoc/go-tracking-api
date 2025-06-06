@@ -1,20 +1,17 @@
-/* eslint-disable @typescript-eslint/no-unsafe-call */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-// src/presentation/graphql/resolvers/auth.resolver.ts
-import { Resolver, Mutation, Args, Context, Query } from '@nestjs/graphql';
+import { Resolver, Mutation, Args, Query } from '@nestjs/graphql';
 import { UseGuards, Logger } from '@nestjs/common';
 import { AuthService } from '../../../core/application/services/auth.service';
 import {
   OtpService,
   OtpType,
 } from '../../../infrastructure/services/otp/otp.service';
+import { SmsService } from '../../../infrastructure/services/sms/sms.service';
 import {
   LoginInput,
   RegisterInput,
   VerifyOtpInput,
   ForgotPasswordInput,
   ResetPasswordInput,
-  RefreshTokenInput,
   SendOtpInput,
 } from '../inputs/user.input';
 import {
@@ -33,6 +30,7 @@ export class AuthResolver {
   constructor(
     private readonly authService: AuthService,
     private readonly otpService: OtpService,
+    private readonly smsService: SmsService,
   ) {}
 
   @Mutation(() => MessageResponse)
@@ -41,91 +39,92 @@ export class AuthResolver {
   ): Promise<MessageResponse> {
     try {
       const result = await this.authService.register(input);
-      this.logger.log(`User registered: ${input.email}`);
+      this.logger.log(`User registered: ${input.phone}`);
       return { message: result.message };
     } catch (error) {
       this.logger.error(
-        `Registration failed for ${input.email}: ${error.message}`,
+        `Registration failed for ${input.phone}: ${error.message}`,
       );
       throw error;
     }
   }
 
   @Mutation(() => AuthResult)
-  async login(
-    @Args('input') input: LoginInput,
-    @Context() context: any,
-  ): Promise<AuthResult> {
+  async login(@Args('input') input: LoginInput): Promise<AuthResult> {
     try {
       const result = await this.authService.login(input);
-
-      // Log successful login
-      this.logger.log(`User logged in: ${input.email}`);
-
-      // You can add the user to context for future use
-      context.user = result.user;
-
+      this.logger.log(`User logged in: ${input.phone}`);
       return result;
     } catch (error) {
-      this.logger.error(`Login failed for ${input.email}: ${error.message}`);
+      this.logger.error(`Login failed for ${input.phone}: ${error.message}`);
       throw error;
     }
   }
 
   @Mutation(() => MessageResponse)
-  async sendEmailVerification(
-    @Args('input') input: SendOtpInput,
-  ): Promise<MessageResponse> {
+  async sendOtp(@Args('input') input: SendOtpInput): Promise<MessageResponse> {
     try {
-      // Check if it's email verification request
-      if (input.type !== OtpType.EMAIL_VERIFICATION) {
-        throw new Error('Invalid OTP type for email verification');
-      }
+      const { phone, type } = input;
 
       // Check rate limit
       const rateLimit = await this.otpService.checkRateLimit(
-        input.email,
-        input.type,
-        3, // Max 3 requests
-        60, // Per hour
+        phone,
+        type,
+        5,
+        60,
       );
-
       if (!rateLimit.allowed) {
         throw new Error(
-          `Too many verification requests. Try again after ${rateLimit.resetTime.toLocaleTimeString()}`,
+          `Too many OTP requests. Try again after ${rateLimit.resetTime.toLocaleTimeString()}`,
         );
       }
 
-      // Generate and send OTP (this will be handled by the auth service)
-      // For now, we'll generate OTP directly
-      await this.otpService.generateOtp(
-        input.email,
-        input.type,
-        15, // 15 minutes
-      );
+      // Generate OTP
+      const expiryMinutes =
+        type === OtpType.LOGIN_2FA
+          ? 5
+          : type === OtpType.PASSWORD_RESET
+            ? 30
+            : 15;
+      const otp = await this.otpService.generateOtp(phone, type, expiryMinutes);
 
-      this.logger.log(`Email verification OTP sent to: ${input.email}`);
+      // Send SMS
+      const purpose =
+        type === OtpType.PHONE_VERIFICATION
+          ? 'verification'
+          : type === OtpType.PASSWORD_RESET
+            ? 'password-reset'
+            : 'login-2fa';
 
-      return { message: 'Verification email sent successfully' };
+      const smsSent = await this.smsService.sendOtp(phone, otp, purpose);
+
+      if (!smsSent) {
+        throw new Error('Failed to send SMS');
+      }
+
+      this.logger.log(`OTP sent to ${phone.substring(0, 6)}***`);
+      return {
+        message: `OTP sent successfully. Valid for ${expiryMinutes} minutes.`,
+      };
     } catch (error) {
       this.logger.error(
-        `Failed to send email verification to ${input.email}: ${error.message}`,
+        `Failed to send OTP to ${input.phone}: ${error.message}`,
       );
       throw error;
     }
   }
 
   @Mutation(() => MessageResponse)
-  async verifyEmail(
+  async verifyPhone(
     @Args('input') input: VerifyOtpInput,
   ): Promise<MessageResponse> {
     try {
-      const result = await this.authService.verifyEmail(input);
-      this.logger.log(`Email verified for: ${input.email}`);
+      const result = await this.authService.verifyPhone(input);
+      this.logger.log(`Phone verified: ${input.phone}`);
       return result;
     } catch (error) {
       this.logger.error(
-        `Email verification failed for ${input.email}: ${error.message}`,
+        `Phone verification failed for ${input.phone}: ${error.message}`,
       );
       throw error;
     }
@@ -136,12 +135,12 @@ export class AuthResolver {
     @Args('input') input: ForgotPasswordInput,
   ): Promise<MessageResponse> {
     try {
-      const result = await this.authService.forgotPassword(input);
-      this.logger.log(`Password reset requested for: ${input.email}`);
+      const result = await this.authService.forgotPassword(input.phone);
+      this.logger.log(`Password reset requested for: ${input.phone}`);
       return result;
     } catch (error) {
       this.logger.error(
-        `Password reset request failed for ${input.email}: ${error.message}`,
+        `Password reset request failed for ${input.phone}: ${error.message}`,
       );
       throw error;
     }
@@ -153,101 +152,33 @@ export class AuthResolver {
   ): Promise<MessageResponse> {
     try {
       const result = await this.authService.resetPassword(
-        input.email,
+        input.phone,
         input.otp,
         input.newPassword,
       );
-      this.logger.log(`Password reset completed for: ${input.email}`);
+      this.logger.log(`Password reset completed for: ${input.phone}`);
       return result;
     } catch (error) {
       this.logger.error(
-        `Password reset failed for ${input.email}: ${error.message}`,
+        `Password reset failed for ${input.phone}: ${error.message}`,
       );
-      throw error;
-    }
-  }
-
-  @Mutation(() => AuthResult)
-  async refreshToken(
-    @Args('input') input: RefreshTokenInput,
-  ): Promise<AuthResult> {
-    try {
-      const result = await this.authService.refreshToken(input.refreshToken);
-      this.logger.log(`Token refreshed for user: ${result.user.email}`);
-      return result;
-    } catch (error) {
-      this.logger.error(`Token refresh failed: ${error.message}`);
       throw error;
     }
   }
 
   @Query(() => RateLimitInfo)
   async checkOtpRateLimit(
-    @Args('email') email: string,
+    @Args('phone') phone: string,
     @Args('type', { type: () => OtpType }) type: OtpType,
   ): Promise<RateLimitInfo> {
-    const rateLimit = await this.otpService.checkRateLimit(email, type);
-    return rateLimit;
+    return this.otpService.checkRateLimit(phone, type);
   }
 
   @Query(() => MessageResponse)
   @UseGuards(JwtAuthGuard)
-  // eslint-disable-next-line @typescript-eslint/require-await
   async whoAmI(@CurrentUser() user: User): Promise<MessageResponse> {
     return {
-      message: `Hello ${user.fullName}, you are logged in as ${user.role} in organization ${user.organizationId}`,
+      message: `Hello ${user.fullName}, you are logged in as ${user.role} with phone ${user.phone}`,
     };
-  }
-
-  //   @Mutation(() => MessageResponse)
-  //   @UseGuards(JwtAuthGuard)
-  //   async logout(@CurrentUser() user: User): Promise<MessageResponse> {
-  //     // In a more advanced implementation, you might want to:
-  //     // 1. Blacklist the current token
-  //     // 2. Clear any session data
-  //     // 3. Log the logout event
-
-  //     this.logger.log(`User logged out: ${user.email}`);
-  //     return { message: 'Logged out successfully' };
-  //   }
-
-  @Mutation(() => MessageResponse)
-  async sendOtp(@Args('input') input: SendOtpInput): Promise<MessageResponse> {
-    try {
-      // Check rate limit
-      const rateLimit = await this.otpService.checkRateLimit(
-        input.email,
-        input.type,
-        5, // Max 5 requests
-        60, // Per hour
-      );
-
-      if (!rateLimit.allowed) {
-        throw new Error(
-          `Too many OTP requests. Try again after ${rateLimit.resetTime.toLocaleTimeString()}`,
-        );
-      }
-
-      // Generate OTP based on type
-      let expiryMinutes = 15; // Default 15 minutes
-      if (input.type === OtpType.PASSWORD_RESET) {
-        expiryMinutes = 30; // 30 minutes for password reset
-      } else if (input.type === OtpType.LOGIN_2FA) {
-        expiryMinutes = 5; // 5 minutes for 2FA
-      }
-
-      await this.otpService.generateOtp(input.email, input.type, expiryMinutes);
-
-      this.logger.log(`OTP generated for ${input.email} (${input.type})`);
-
-      return {
-        message: `OTP sent successfully. It will expire in ${expiryMinutes} minutes.`,
-      };
-    } catch (error) {
-      this.logger.error(
-        `Failed to send OTP to ${input.email}: ${error.message}`,
-      );
-      throw error;
-    }
   }
 }

@@ -1,4 +1,8 @@
-// src/infrastructure/database/typeorm/entities/user.typeorm-entity.ts
+// ========================================
+// 4. UPDATE TYPEORM ENTITY
+// ========================================
+// File: src/infrastructure/database/typeorm/entities/user.typeorm-entity.ts
+
 import { Entity, Column, ManyToOne, JoinColumn, Index } from 'typeorm';
 import { BaseTypeormEntity } from './base.typeorm-entity';
 import { OrganizationTypeormEntity } from './organization.typeorm-entity';
@@ -17,15 +21,15 @@ export enum UserStatus {
 }
 
 @Entity('users')
-@Index(['email'], { unique: true })
+@Index(['phone'], { unique: true })
 @Index(['organizationId'])
-@Index(['email', 'organizationId'])
+@Index(['phone', 'organizationId'])
 export class UserTypeormEntity extends BaseTypeormEntity {
   @Column({ name: 'organization_id' })
   organizationId: number;
 
-  @Column({ type: 'varchar', length: 255, unique: true })
-  email: string;
+  @Column({ type: 'varchar', length: 20, unique: true })
+  phone: string;
 
   @Column({ name: 'password_hash', type: 'varchar', length: 255 })
   passwordHash: string;
@@ -33,8 +37,8 @@ export class UserTypeormEntity extends BaseTypeormEntity {
   @Column({ name: 'full_name', type: 'varchar', length: 255 })
   fullName: string;
 
-  @Column({ type: 'varchar', length: 20, nullable: true })
-  phone?: string;
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  email?: string;
 
   @Column({
     type: 'enum',
@@ -53,11 +57,11 @@ export class UserTypeormEntity extends BaseTypeormEntity {
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive: boolean;
 
-  @Column({ name: 'email_verified', type: 'boolean', default: false })
-  emailVerified: boolean;
-
   @Column({ name: 'phone_verified', type: 'boolean', default: false })
   phoneVerified: boolean;
+
+  @Column({ name: 'email_verified', type: 'boolean', default: false })
+  emailVerified: boolean;
 
   @Column({ name: 'last_login', type: 'timestamp', nullable: true })
   lastLogin?: Date;
@@ -68,33 +72,6 @@ export class UserTypeormEntity extends BaseTypeormEntity {
   @Column({ name: 'locked_until', type: 'timestamp', nullable: true })
   lockedUntil?: Date;
 
-  @Column({
-    name: 'reset_password_token',
-    type: 'varchar',
-    length: 255,
-    nullable: true,
-  })
-  resetPasswordToken?: string;
-
-  @Column({ name: 'reset_password_expires', type: 'timestamp', nullable: true })
-  resetPasswordExpires?: Date;
-
-  @Column({
-    name: 'email_verification_token',
-    type: 'varchar',
-    length: 255,
-    nullable: true,
-  })
-  emailVerificationToken?: string;
-
-  @Column({
-    name: 'email_verification_expires',
-    type: 'timestamp',
-    nullable: true,
-  })
-  emailVerificationExpires?: Date;
-
-  // Relations
   @ManyToOne(() => OrganizationTypeormEntity, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'organization_id' })
   organization: OrganizationTypeormEntity;

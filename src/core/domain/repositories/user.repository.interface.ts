@@ -1,4 +1,3 @@
-// src/core/domain/repositories/user.repository.interface.ts
 import { BaseRepositoryInterface } from './base.repository.interface';
 import { User, UserRole, UserStatus } from '../entities/user.entity';
 import {
@@ -11,28 +10,24 @@ export interface UserFilters {
   role?: UserRole;
   status?: UserStatus;
   isActive?: boolean;
-  emailVerified?: boolean;
-  search?: string; // Search in name, email, phone
+  phoneVerified?: boolean;
+  search?: string;
 }
 
 export interface UserRepositoryInterface extends BaseRepositoryInterface<User> {
-  // Authentication methods
-  findByEmail(email: string): Promise<User | null>;
-  findByEmailAndOrganization(
-    email: string,
+  // Phone-based authentication
+  findByPhone(phone: string): Promise<User | null>;
+  findByPhoneAndOrganization(
+    phone: string,
     organizationId: number,
   ): Promise<User | null>;
-  findByResetToken(token: string): Promise<User | null>;
-  findByEmailVerificationToken(token: string): Promise<User | null>;
 
-  // User management
+  // Management
   findByOrganization(organizationId: number): Promise<User[]>;
   findByOrganizationPaginated(
     organizationId: number,
     pagination: Pagination,
   ): Promise<PaginatedResult<User>>;
-
-  // Advanced filtering
   findWithFilters(
     filters: UserFilters,
     pagination?: Pagination,

@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method */
-// src/infrastructure/database/typeorm/repositories/user.typeorm-repository.ts
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, SelectQueryBuilder } from 'typeorm';
@@ -36,107 +34,69 @@ export class UserTypeormRepository
   }
 
   // Mappers
-  static toEntity(typeormEntity: UserTypeormEntity): User {
+  static toEntity(this: void, typeormEntity: UserTypeormEntity): User {
     return new User({
       id: typeormEntity.id,
       createdAt: typeormEntity.createdAt,
       updatedAt: typeormEntity.updatedAt,
       organizationId: typeormEntity.organizationId,
-      email: typeormEntity.email,
+      phone: typeormEntity.phone,
       passwordHash: typeormEntity.passwordHash,
       fullName: typeormEntity.fullName,
-      phone: typeormEntity.phone,
+      email: typeormEntity.email,
       role: typeormEntity.role as UserRole,
       status: typeormEntity.status as UserStatus,
       isActive: typeormEntity.isActive,
-      emailVerified: typeormEntity.emailVerified,
       phoneVerified: typeormEntity.phoneVerified,
+      emailVerified: typeormEntity.emailVerified,
       lastLogin: typeormEntity.lastLogin,
       loginAttempts: typeormEntity.loginAttempts,
       lockedUntil: typeormEntity.lockedUntil,
-      resetPasswordToken: typeormEntity.resetPasswordToken,
-      resetPasswordExpires: typeormEntity.resetPasswordExpires,
-      emailVerificationToken: typeormEntity.emailVerificationToken,
-      emailVerificationExpires: typeormEntity.emailVerificationExpires,
     });
   }
 
-  static toTypeorm(entity: Partial<User>): UserTypeormEntity {
+  static toTypeorm(this: void, entity: Partial<User>): UserTypeormEntity {
     const typeormEntity = new UserTypeormEntity();
-    typeormEntity.id = entity.id!;
-    typeormEntity.organizationId = entity.organizationId!;
-    typeormEntity.email = entity.email!;
-    typeormEntity.passwordHash = entity.passwordHash!;
-    typeormEntity.fullName = entity.fullName!;
-    typeormEntity.phone = entity.phone!;
-    typeormEntity.role = entity.role as UserRole;
-    typeormEntity.status = entity.status as UserStatus;
-    typeormEntity.isActive = entity.isActive!;
-    typeormEntity.emailVerified = entity.emailVerified!;
-    typeormEntity.phoneVerified = entity.phoneVerified!;
-    typeormEntity.lastLogin = entity.lastLogin!;
-    typeormEntity.loginAttempts = entity.loginAttempts!;
-    typeormEntity.lockedUntil = entity.lockedUntil!;
-    typeormEntity.resetPasswordToken = entity.resetPasswordToken!;
-    typeormEntity.resetPasswordExpires = entity.resetPasswordExpires!;
-    typeormEntity.emailVerificationToken = entity.emailVerificationToken!;
-    typeormEntity.emailVerificationExpires = entity.emailVerificationExpires!;
+    if (entity.id) typeormEntity.id = entity.id;
+    if (entity.organizationId)
+      typeormEntity.organizationId = entity.organizationId;
+    if (entity.phone) typeormEntity.phone = entity.phone;
+    if (entity.passwordHash) typeormEntity.passwordHash = entity.passwordHash;
+    if (entity.fullName) typeormEntity.fullName = entity.fullName;
+    if (entity.email) typeormEntity.email = entity.email;
+    if (entity.role) typeormEntity.role = entity.role;
+    if (entity.status) typeormEntity.status = entity.status;
+    if (entity.isActive !== undefined) typeormEntity.isActive = entity.isActive;
+    if (entity.phoneVerified !== undefined)
+      typeormEntity.phoneVerified = entity.phoneVerified;
+    if (entity.emailVerified !== undefined)
+      typeormEntity.emailVerified = entity.emailVerified;
+    if (entity.lastLogin) typeormEntity.lastLogin = entity.lastLogin;
+    if (entity.loginAttempts !== undefined)
+      typeormEntity.loginAttempts = entity.loginAttempts;
+    if (entity.lockedUntil) typeormEntity.lockedUntil = entity.lockedUntil;
     return typeormEntity;
   }
 
-  // Authentication methods
-  async findByEmail(email: string): Promise<User | null> {
+  // Phone-based methods
+  async findByPhone(phone: string): Promise<User | null> {
     const typeormEntity = await this.userRepository.findOne({
-      where: { email },
+      where: { phone },
     });
     return typeormEntity ? UserTypeormRepository.toEntity(typeormEntity) : null;
   }
 
-  async findByEmailAndOrganization(
-    email: string,
+  async findByPhoneAndOrganization(
+    phone: string,
     organizationId: number,
   ): Promise<User | null> {
     const typeormEntity = await this.userRepository.findOne({
-      where: { email, organizationId },
+      where: { phone, organizationId },
     });
     return typeormEntity ? UserTypeormRepository.toEntity(typeormEntity) : null;
   }
 
-  async findByResetToken(token: string): Promise<User | null> {
-    const typeormEntity = await this.userRepository.findOne({
-      where: {
-        resetPasswordToken: token,
-      },
-    });
-
-    if (
-      typeormEntity &&
-      typeormEntity.resetPasswordExpires &&
-      typeormEntity.resetPasswordExpires > new Date()
-    ) {
-      return UserTypeormRepository.toEntity(typeormEntity);
-    }
-    return null;
-  }
-
-  async findByEmailVerificationToken(token: string): Promise<User | null> {
-    const typeormEntity = await this.userRepository.findOne({
-      where: {
-        emailVerificationToken: token,
-      },
-    });
-
-    if (
-      typeormEntity &&
-      typeormEntity.emailVerificationExpires &&
-      typeormEntity.emailVerificationExpires > new Date()
-    ) {
-      return UserTypeormRepository.toEntity(typeormEntity);
-    }
-    return null;
-  }
-
-  // User management
+  // Management methods
   async findByOrganization(organizationId: number): Promise<User[]> {
     const typeormEntities = await this.userRepository.find({
       where: { organizationId },
@@ -161,7 +121,6 @@ export class UserTypeormRepository
     return PaginatedResult.create(items, pagination, totalItems);
   }
 
-  // Advanced filtering
   async findWithFilters(
     filters: UserFilters,
     pagination?: Pagination,
@@ -206,15 +165,15 @@ export class UserTypeormRepository
       });
     }
 
-    if (filters.emailVerified !== undefined) {
-      queryBuilder.andWhere('user.emailVerified = :emailVerified', {
-        emailVerified: filters.emailVerified,
+    if (filters.phoneVerified !== undefined) {
+      queryBuilder.andWhere('user.phoneVerified = :phoneVerified', {
+        phoneVerified: filters.phoneVerified,
       });
     }
 
     if (filters.search) {
       queryBuilder.andWhere(
-        '(user.fullName ILIKE :search OR user.email ILIKE :search OR user.phone ILIKE :search)',
+        '(user.fullName ILIKE :search OR user.phone ILIKE :search OR user.email ILIKE :search)',
         { search: `%${filters.search}%` },
       );
     }
@@ -225,7 +184,6 @@ export class UserTypeormRepository
   // Bulk operations
   async findByIds(ids: number[]): Promise<User[]> {
     if (ids.length === 0) return [];
-
     const typeormEntities = await this.userRepository.findByIds(ids);
     return typeormEntities.map(UserTypeormRepository.toEntity);
   }
@@ -245,7 +203,6 @@ export class UserTypeormRepository
     const loginAttempts = (user.loginAttempts || 0) + 1;
     const updateData: Partial<UserTypeormEntity> = { loginAttempts };
 
-    // Lock account after 5 failed attempts for 30 minutes
     if (loginAttempts >= 5) {
       updateData.lockedUntil = new Date(Date.now() + 30 * 60 * 1000);
     }
@@ -262,15 +219,11 @@ export class UserTypeormRepository
 
   // Statistics
   async countByOrganization(organizationId: number): Promise<number> {
-    return this.userRepository.count({
-      where: { organizationId },
-    });
+    return this.userRepository.count({ where: { organizationId } });
   }
 
   async countByRole(organizationId: number, role: UserRole): Promise<number> {
-    return this.userRepository.count({
-      where: { organizationId, role },
-    });
+    return this.userRepository.count({ where: { organizationId, role } });
   }
 
   async countActiveUsers(organizationId: number): Promise<number> {

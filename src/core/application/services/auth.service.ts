@@ -1,8 +1,7 @@
+/* eslint-disable @typescript-eslint/no-unsafe-return */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-call */
 /* eslint-disable @typescript-eslint/require-await */
-/* eslint-disable @typescript-eslint/no-unsafe-return */
-// src/core/application/services/auth.service.ts
 import {
   Injectable,
   UnauthorizedException,
@@ -19,22 +18,22 @@ import {
   OtpService,
   OtpType,
 } from '../../../infrastructure/services/otp/otp.service';
-import { NotificationService } from '../../../infrastructure/services/notification/notification.service';
+import { SmsService } from '../../../infrastructure/services/sms/sms.service';
+import { PhoneUtil } from '../../../infrastructure/utils/phone.util';
 
-// ✅ Define token constant for consistency
 export const USER_REPOSITORY_TOKEN = 'UserRepositoryInterface';
 
 export interface LoginDto {
-  email: string;
+  phone: string;
   password: string;
   organizationId?: number;
 }
 
 export interface RegisterDto {
-  email: string;
+  phone: string;
   password: string;
   fullName: string;
-  phone?: string;
+  email?: string;
   organizationId: number;
   role?: UserRole;
 }
@@ -44,19 +43,9 @@ export interface VerifyEmailDto {
 }
 
 export interface VerifyOtpDto {
-  email: string;
+  phone: string;
   otp: string;
   type: OtpType;
-}
-
-export interface ResetPasswordDto {
-  token: string;
-  newPassword: string;
-}
-
-export interface ForgotPasswordDto {
-  email: string;
-  organizationId?: number;
 }
 
 export interface AuthResult {
@@ -67,8 +56,8 @@ export interface AuthResult {
 }
 
 export interface JwtPayload {
-  sub: number; // user ID
-  email: string;
+  sub: number;
+  phone: string;
   organizationId: number;
   role: UserRole;
   iat?: number;
@@ -78,8 +67,6 @@ export interface JwtPayload {
 @Injectable()
 export class AuthService {
   private readonly SALT_ROUNDS = 12;
-  private readonly JWT_EXPIRY = '1h';
-  private readonly REFRESH_TOKEN_EXPIRY = '7d';
 
   constructor(
     @Inject(USER_REPOSITORY_TOKEN)
@@ -87,33 +74,39 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly otpService: OtpService,
-    private readonly notificationService: NotificationService,
+    private readonly smsService: SmsService,
   ) {}
 
   /**
-   * User Registration
+   * Register new user with phone number
    */
   async register(
     registerDto: RegisterDto,
   ): Promise<{ user: User; message: string }> {
     const {
-      email,
+      phone,
       password,
       fullName,
-      phone,
+      email,
       organizationId,
       role = UserRole.VISITOR,
     } = registerDto;
 
-    // Check if user already exists
-    const existingUser = await this.userRepository.findByEmailAndOrganization(
-      email,
+    // Normalize phone
+    const normalizedPhone = PhoneUtil.normalize(phone);
+
+    if (!PhoneUtil.isValid(normalizedPhone)) {
+      throw new BadRequestException('Invalid phone number format');
+    }
+
+    // Check if user exists
+    const existingUser = await this.userRepository.findByPhoneAndOrganization(
+      normalizedPhone,
       organizationId,
     );
+
     if (existingUser) {
-      throw new ConflictException(
-        'User with this email already exists in the organization',
-      );
+      throw new ConflictException('User with this phone number already exists');
     }
 
     // Hash password
@@ -121,44 +114,46 @@ export class AuthService {
 
     // Create user
     const user = new User({
-      email,
+      phone: normalizedPhone,
       passwordHash,
       fullName,
-      phone,
+      email,
       organizationId,
       role,
       status: UserStatus.PENDING,
       isActive: true,
-      emailVerified: false,
       phoneVerified: false,
+      emailVerified: false,
       loginAttempts: 0,
     });
 
     const savedUser = await this.userRepository.create(user);
 
-    // Send email verification
-    await this.sendEmailVerification(savedUser);
+    // Send verification SMS
+    await this.sendPhoneVerification(savedUser);
 
     return {
       user: savedUser,
-      message:
-        'User registered successfully. Please check your email for verification.',
+      message: 'User registered successfully. Please verify your phone number.',
     };
   }
 
   /**
-   * User Login
+   * Login with phone number
    */
   async login(loginDto: LoginDto): Promise<AuthResult> {
-    const { email, password, organizationId } = loginDto;
+    const { phone, password, organizationId } = loginDto;
+
+    // Normalize phone
+    const normalizedPhone = PhoneUtil.normalize(phone);
 
     // Find user
     const user = organizationId
-      ? await this.userRepository.findByEmailAndOrganization(
-          email,
+      ? await this.userRepository.findByPhoneAndOrganization(
+          normalizedPhone,
           organizationId,
         )
-      : await this.userRepository.findByEmail(email);
+      : await this.userRepository.findByPhone(normalizedPhone);
 
     if (!user) {
       throw new UnauthorizedException('Invalid credentials');
@@ -167,17 +162,12 @@ export class AuthService {
     // Check if user can login
     if (!user.canLogin()) {
       if (user.isLocked()) {
-        throw new UnauthorizedException(
-          'Account is temporarily locked due to too many failed login attempts',
-        );
+        throw new UnauthorizedException('Account is temporarily locked');
       }
-      if (!user.emailVerified) {
+      if (!user.phoneVerified) {
         throw new UnauthorizedException(
-          'Please verify your email before logging in',
+          'Please verify your phone number first',
         );
-      }
-      if (user.status !== UserStatus.ACTIVE) {
-        throw new UnauthorizedException('Account is not active');
       }
       throw new UnauthorizedException('Account access denied');
     }
@@ -188,12 +178,11 @@ export class AuthService {
       user.passwordHash,
     );
     if (!isPasswordValid) {
-      // Increment login attempts
       await this.userRepository.incrementLoginAttempts(user.id);
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    // Reset login attempts and update last login
+    // Update login info
     await this.userRepository.resetLoginAttempts(user.id);
     await this.userRepository.updateLastLogin(user.id);
 
@@ -204,20 +193,20 @@ export class AuthService {
       user,
       accessToken,
       refreshToken,
-      expiresIn: 3600, // 1 hour in seconds
+      expiresIn: 3600,
     };
   }
 
   /**
-   * Send Email Verification
+   * Send phone verification OTP
    */
-  async sendEmailVerification(user: User): Promise<{ message: string }> {
+  async sendPhoneVerification(user: User): Promise<{ message: string }> {
     // Check rate limit
     const rateLimit = await this.otpService.checkRateLimit(
-      user.email,
-      OtpType.EMAIL_VERIFICATION,
-      3, // Max 3 requests
-      60, // Per hour
+      user.phone,
+      OtpType.PHONE_VERIFICATION,
+      3,
+      60,
     );
 
     if (!rateLimit.allowed) {
@@ -228,124 +217,116 @@ export class AuthService {
 
     // Generate OTP
     const otp = await this.otpService.generateOtp(
-      user.email,
-      OtpType.EMAIL_VERIFICATION,
-      15, // 15 minutes expiry
+      user.phone,
+      OtpType.PHONE_VERIFICATION,
+      15,
     );
 
-    // Send email
-    const emailSent = await this.notificationService.sendEmail(
-      user.email,
-      'Verify Your Email - GoTracking',
-      `Hello ${user.fullName},\n\nYour email verification code is: ${otp}\n\nThis code will expire in 15 minutes.\n\nBest regards,\nGoTracking Team`,
+    console.log(`Generated OTP for ${user.phone}: ${otp}`); // For debugging, remove in production
+
+    // Send SMS
+    const smsSent = await this.smsService.sendOtp(
+      user.phone,
+      otp,
+      'verification',
     );
 
-    if (!emailSent) {
-      throw new BadRequestException('Failed to send verification email');
+    if (!smsSent) {
+      throw new BadRequestException('Failed to send verification SMS');
     }
 
-    return {
-      message: 'Verification email sent successfully',
-    };
+    return { message: 'Verification SMS sent successfully' };
   }
 
   /**
-   * Verify Email with OTP
+   * Verify phone with OTP
    */
-  async verifyEmail(verifyOtpDto: VerifyOtpDto): Promise<{ message: string }> {
-    const { email, otp, type } = verifyOtpDto;
+  async verifyPhone(verifyOtpDto: VerifyOtpDto): Promise<{ message: string }> {
+    const { phone, otp, type } = verifyOtpDto;
+
+    const normalizedPhone = PhoneUtil.normalize(phone);
 
     // Verify OTP
-    const otpResult = await this.otpService.verifyOtp(email, type, otp);
+    const otpResult = await this.otpService.verifyOtp(
+      normalizedPhone,
+      type,
+      otp,
+    );
     if (!otpResult.success) {
       throw new BadRequestException(otpResult.message);
     }
 
-    // Find user and update email verification status
-    const user = await this.userRepository.findByEmail(email);
+    // Find and update user
+    const user = await this.userRepository.findByPhone(normalizedPhone);
     if (!user) {
       throw new BadRequestException('User not found');
     }
 
-    user.verifyEmail();
-    if (user.status === UserStatus.PENDING) {
-      user.status = UserStatus.ACTIVE;
-    }
-
+    user.verifyPhone();
     await this.userRepository.update(user.id, user);
 
-    return {
-      message: 'Email verified successfully',
-    };
+    return { message: 'Phone verified successfully' };
   }
 
   /**
-   * Forgot Password
+   * Forgot password
    */
-  async forgotPassword(
-    forgotPasswordDto: ForgotPasswordDto,
-  ): Promise<{ message: string }> {
-    const { email, organizationId } = forgotPasswordDto;
+  async forgotPassword(phone: string): Promise<{ message: string }> {
+    const normalizedPhone = PhoneUtil.normalize(phone);
 
-    // Find user
-    const user = organizationId
-      ? await this.userRepository.findByEmailAndOrganization(
-          email,
-          organizationId,
-        )
-      : await this.userRepository.findByEmail(email);
+    // Find user (don't reveal if exists)
+    const user = await this.userRepository.findByPhone(normalizedPhone);
 
-    // Always return success message (don't reveal if email exists)
     if (!user) {
       return {
-        message: 'If the email exists, a password reset link has been sent',
+        message:
+          'If the phone number exists, a password reset code has been sent',
       };
     }
 
     // Check rate limit
     const rateLimit = await this.otpService.checkRateLimit(
-      user.email,
+      normalizedPhone,
       OtpType.PASSWORD_RESET,
-      3, // Max 3 requests
-      60, // Per hour
+      3,
+      60,
     );
 
     if (!rateLimit.allowed) {
       throw new BadRequestException(
-        `Too many password reset requests. Try again after ${rateLimit.resetTime.toLocaleTimeString()}`,
+        `Too many password reset requests. Try again later.`,
       );
     }
 
     // Generate OTP
     const otp = await this.otpService.generateOtp(
-      user.email,
+      normalizedPhone,
       OtpType.PASSWORD_RESET,
-      30, // 30 minutes expiry
+      30,
     );
 
-    // Send email
-    await this.notificationService.sendEmail(
-      user.email,
-      'Password Reset - GoTracking',
-      `Hello ${user.fullName},\n\nYour password reset code is: ${otp}\n\nThis code will expire in 30 minutes.\n\nIf you didn't request this, please ignore this email.\n\nBest regards,\nGoTracking Team`,
-    );
+    // Send SMS
+    await this.smsService.sendOtp(normalizedPhone, otp, 'password-reset');
 
     return {
-      message: 'If the email exists, a password reset link has been sent',
+      message:
+        'If the phone number exists, a password reset code has been sent',
     };
   }
 
   /**
-   * Reset Password with OTP
+   * Reset password with OTP
    */
   async resetPassword(
-    email: string,
+    phone: string,
     otp: string,
     newPassword: string,
   ): Promise<{ message: string }> {
+    const normalizedPhone = PhoneUtil.normalize(phone);
+
     // Verify OTP
     const otpResult = await this.otpService.verifyOtp(
-      email,
+      normalizedPhone,
       OtpType.PASSWORD_RESET,
       otp,
     );
@@ -354,7 +335,7 @@ export class AuthService {
     }
 
     // Find user
-    const user = await this.userRepository.findByEmail(email);
+    const user = await this.userRepository.findByPhone(normalizedPhone);
     if (!user) {
       throw new BadRequestException('User not found');
     }
@@ -364,20 +345,16 @@ export class AuthService {
 
     // Update user
     user.passwordHash = passwordHash;
-    user.resetPasswordToken = undefined;
-    user.resetPasswordExpires = undefined;
     user.loginAttempts = 0;
     user.lockedUntil = undefined;
 
     await this.userRepository.update(user.id, user);
 
-    return {
-      message: 'Password reset successfully',
-    };
+    return { message: 'Password reset successfully' };
   }
 
   /**
-   * Refresh Token
+   * Refresh token
    */
   async refreshToken(refreshToken: string): Promise<AuthResult> {
     try {
@@ -403,7 +380,7 @@ export class AuthService {
   }
 
   /**
-   * Validate JWT Payload
+   * Validate JWT payload
    */
   async validateJwtPayload(payload: JwtPayload): Promise<User> {
     const user = await this.userRepository.findById(payload.sub);
@@ -415,23 +392,16 @@ export class AuthService {
     return user;
   }
 
-  /**
-   * Private helper methods
-   */
+  // Private methods
   private async hashPassword(password: string): Promise<string> {
-    return bcrypt.hashSync(password, this.SALT_ROUNDS);
+    return bcrypt.hash(password, this.SALT_ROUNDS);
   }
 
   private async verifyPassword(
     password: string,
     hashedPassword: string,
   ): Promise<boolean> {
-    console.log('Verifying password:', password, hashedPassword);
-    console.log(
-      'Hashed password:',
-      await bcrypt.compareSync(password, hashedPassword),
-    );
-    return bcrypt.compareSync(password, hashedPassword);
+    return bcrypt.compare(password, hashedPassword);
   }
 
   private async generateTokens(
@@ -439,18 +409,14 @@ export class AuthService {
   ): Promise<{ accessToken: string; refreshToken: string }> {
     const payload: JwtPayload = {
       sub: user.id,
-      email: user.email,
+      phone: user.phone,
       organizationId: user.organizationId,
       role: user.role,
     };
 
     const [accessToken, refreshToken] = await Promise.all([
-      this.jwtService.signAsync(payload, {
-        expiresIn: this.JWT_EXPIRY,
-      }),
-      this.jwtService.signAsync(payload, {
-        expiresIn: this.REFRESH_TOKEN_EXPIRY,
-      }),
+      this.jwtService.signAsync(payload, { expiresIn: '1h' }),
+      this.jwtService.signAsync(payload, { expiresIn: '7d' }),
     ]);
 
     return { accessToken, refreshToken };

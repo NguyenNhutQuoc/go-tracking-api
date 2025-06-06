@@ -57,24 +57,6 @@ export class UserDataLoaderService {
     );
   }
 
-  createUserByEmailLoader(): DataLoader<string, User | null> {
-    return new DataLoader<string, User | null>(
-      async (emails: readonly string[]) => {
-        // Since we need individual lookups by email, we'll do them in parallel
-        const users = await Promise.all(
-          emails.map((email) => this.userRepository.findByEmail(email)),
-        );
-
-        return users;
-      },
-      {
-        cache: true,
-        batchScheduleFn: (callback) => setTimeout(callback, 10),
-        maxBatchSize: 50,
-      },
-    );
-  }
-
   createUserCountByOrganizationLoader(): DataLoader<number, number> {
     return new DataLoader<number, number>(
       async (organizationIds: readonly number[]) => {

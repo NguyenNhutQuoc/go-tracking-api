@@ -1,4 +1,8 @@
-// src/core/domain/entities/user.entity.ts
+// ========================================
+// 3. UPDATE USER ENTITY
+// ========================================
+// File: src/core/domain/entities/user.entity.ts
+
 import { BaseEntity } from './base.entity';
 
 export enum UserRole {
@@ -16,22 +20,18 @@ export enum UserStatus {
 
 export class User extends BaseEntity {
   organizationId: number;
-  email: string;
+  phone: string; // Primary identifier (was email)
   passwordHash: string;
   fullName: string;
-  phone?: string;
+  email?: string; // Optional now
   role: UserRole;
   status: UserStatus;
   isActive: boolean;
+  phoneVerified: boolean; // Primary verification
   emailVerified: boolean;
-  phoneVerified: boolean;
   lastLogin?: Date;
   loginAttempts: number;
   lockedUntil?: Date;
-  resetPasswordToken?: string;
-  resetPasswordExpires?: Date;
-  emailVerificationToken?: string;
-  emailVerificationExpires?: Date;
 
   constructor(partial: Partial<User>) {
     super(partial);
@@ -47,14 +47,12 @@ export class User extends BaseEntity {
       this.isActive &&
       this.status === UserStatus.ACTIVE &&
       !this.isLocked() &&
-      this.emailVerified
+      this.phoneVerified // Phone must be verified
     );
   }
 
   incrementLoginAttempts(): void {
     this.loginAttempts += 1;
-
-    // Lock account after 5 failed attempts for 30 minutes
     if (this.loginAttempts >= 5) {
       this.lockedUntil = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes
     }
@@ -66,31 +64,10 @@ export class User extends BaseEntity {
     this.lastLogin = new Date();
   }
 
-  generateResetToken(): string {
-    const token =
-      Math.random().toString(36).substr(2, 15) +
-      Math.random().toString(36).substr(2, 15);
-    this.resetPasswordToken = token;
-    this.resetPasswordExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
-    return token;
-  }
-
-  generateEmailVerificationToken(): string {
-    const token =
-      Math.random().toString(36).substr(2, 15) +
-      Math.random().toString(36).substr(2, 15);
-    this.emailVerificationToken = token;
-    this.emailVerificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
-    return token;
-  }
-
-  verifyEmail(): void {
-    this.emailVerified = true;
-    this.emailVerificationToken = undefined;
-    this.emailVerificationExpires = undefined;
-  }
-
   verifyPhone(): void {
     this.phoneVerified = true;
+    if (this.status === UserStatus.PENDING) {
+      this.status = UserStatus.ACTIVE;
+    }
   }
 }
