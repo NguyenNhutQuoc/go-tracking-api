@@ -1,9 +1,9 @@
-// src/app.module.ts
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { GraphQLModule } from '@nestjs/graphql';
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
+import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -11,7 +11,7 @@ import { DatabaseConfig } from './config/database.config';
 import { EnvConfig } from './config/env.config';
 import { graphqlConfig } from './config/graphql.config';
 
-// Import the new modules
+// Import modules
 import { AuthModule } from './modules/auth.module';
 import { CacheModule } from './infrastructure/modules/cache.module';
 
@@ -19,16 +19,23 @@ import { CacheModule } from './infrastructure/modules/cache.module';
 import { DateScalar } from './infrastructure/graphql/scalars/date.scalar';
 import { CoordinatesScalar } from './infrastructure/graphql/scalars/coordinates.scalar';
 
+// Import DataLoader plugin
+import { DataLoaderPlugin } from './infrastructure/graphql/plugins/dataloader.plugin';
+
+// IMPORTANT: Only use GlobalErrorFilter for HTTP, not GraphQL
+import { GlobalErrorFilter } from './infrastructure/filters/global-error.filter';
+import { ErrorLoggingInterceptor } from './infrastructure/interceptor/error-loging.interceptor';
+
 @Module({
   imports: [
-    // Config module - phải load đầu tiên
+    // Config module
     ConfigModule.forRoot({
-      isGlobal: true, // Làm cho ConfigService có thể inject ở mọi nơi
-      load: [EnvConfig], // Load các configuration
-      envFilePath: ['.env.local', '.env'], // Tự động load file .env
+      isGlobal: true,
+      load: [EnvConfig],
+      envFilePath: ['.env.local', '.env'],
     }),
 
-    // Cache module (Redis) - load trước khi sử dụng
+    // Cache module (Redis)
     CacheModule,
 
     // TypeORM configuration
@@ -37,16 +44,34 @@ import { CoordinatesScalar } from './infrastructure/graphql/scalars/coordinates.
       useClass: DatabaseConfig,
     }),
 
-    // GraphQL configuration
+    // GraphQL configuration với error handling riêng
     GraphQLModule.forRoot<ApolloDriverConfig>({
       driver: ApolloDriver,
       ...graphqlConfig,
+      // Add DataLoader plugin here instead of in config
+      plugins: [new DataLoaderPlugin()],
     }),
 
-    // Authentication module với tất cả các tính năng auth
+    // Authentication module
     AuthModule,
   ],
   controllers: [AppController],
-  providers: [AppService, DateScalar, CoordinatesScalar],
+  providers: [
+    AppService,
+    DateScalar,
+    CoordinatesScalar,
+
+    // IMPORTANT: Global filter chỉ áp dụng cho HTTP, không cho GraphQL
+    // GraphQL sẽ dùng formatError trong config
+    {
+      provide: APP_FILTER,
+      useClass: GlobalErrorFilter,
+    },
+
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: ErrorLoggingInterceptor,
+    },
+  ],
 })
 export class AppModule {}

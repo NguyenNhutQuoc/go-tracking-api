@@ -3,41 +3,24 @@ import { Plugin } from '@nestjs/apollo';
 import { ApolloServerPlugin, GraphQLRequestListener } from '@apollo/server';
 import * as DataLoader from 'dataloader';
 
-// Define your context type
+// Simplified interface - no loaders pre-defined
 interface MyContext {
+  req?: any;
   loaders?: {
-    usersLoader: DataLoader<string, any>;
-    locationsLoader: DataLoader<string, any>;
-    trackingsLoader: DataLoader<string, any>;
+    [key: string]: DataLoader<any, any>;
   };
 }
 
 @Plugin()
 export class DataLoaderPlugin implements ApolloServerPlugin<MyContext> {
   async requestDidStart(): Promise<GraphQLRequestListener<MyContext>> {
-    // Create a new DataLoader for each request
-    const loaders = {
-      usersLoader: new DataLoader(async (keys: string[]) => {
-        // Implementation would go here when actual business logic is added
-        // This is a placeholder implementation
-        return keys.map(() => ({}));
-      }),
-      locationsLoader: new DataLoader(async (keys: string[]) => {
-        // Implementation would go here when actual business logic is added
-        // This is a placeholder implementation
-        return keys.map(() => ({}));
-      }),
-      trackingsLoader: new DataLoader(async (keys: string[]) => {
-        // Implementation would go here when actual business logic is added
-        // This is a placeholder implementation
-        return keys.map(() => ({}));
-      }),
-    };
-
     return {
       didResolveOperation: async (requestContext) => {
-        // Attach the DataLoader instances to the context
-        requestContext.contextValue.loaders = loaders;
+        // Initialize empty loaders object
+        // Actual loaders will be created by services when needed
+        if (!requestContext.contextValue.loaders) {
+          requestContext.contextValue.loaders = {};
+        }
       },
     };
   }

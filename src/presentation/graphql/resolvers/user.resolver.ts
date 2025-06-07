@@ -29,6 +29,7 @@ import { CurrentUser } from '../../decorators/current-user.decorator';
 import { Roles } from '../../decorators/roles.decorator';
 import { UserDataLoaderService } from '../../../infrastructure/dataloader/user.dataloader';
 import DataLoader from 'dataloader';
+import { GraphQLError } from 'graphql';
 
 @Resolver(() => User)
 @UseGuards(JwtAuthGuard)
@@ -62,29 +63,74 @@ export class UserResolver {
     @Args('id', { type: () => ID }) id: number,
     @CurrentUser() currentUser: UserEntity,
   ): Promise<MessageResponse> {
-    const targetUser = await this.userRepository.findById(id);
-    if (!targetUser) {
-      throw new Error('User not found');
-    }
+    try {
+      const targetUser = await this.userRepository.findById(id);
+      if (!targetUser) {
+        throw new GraphQLError('Không tìm thấy người dùng', {
+          extensions: {
+            code: 'BIZ_003',
+            category: 'business',
+            severity: 'medium',
+            suggestion: 'Không tìm thấy dữ liệu yêu cầu',
+            retryable: false,
+          },
+        });
+      }
 
-    // Ensure admin can only delete users from their organization
-    if (currentUser.organizationId !== targetUser.organizationId) {
-      throw new ForbiddenException(
-        'You can only delete users from your organization',
+      // Ensure admin can only delete users from their organization
+      if (currentUser.organizationId !== targetUser.organizationId) {
+        throw new GraphQLError(
+          'Bạn chỉ có thể xóa người dùng trong tổ chức của mình',
+          {
+            extensions: {
+              code: 'BIZ_004',
+              category: 'permission',
+              severity: 'high',
+              suggestion: 'Bạn không có quyền thực hiện thao tác này',
+              retryable: false,
+            },
+          },
+        );
+      }
+
+      // Prevent self-deletion
+      if (currentUser.id === id) {
+        throw new GraphQLError('Bạn không thể xóa chính tài khoản của mình', {
+          extensions: {
+            code: 'BIZ_006',
+            category: 'business',
+            severity: 'medium',
+            suggestion:
+              'Thao tác này không được phép trong tình huống hiện tại',
+            retryable: false,
+          },
+        });
+      }
+
+      await this.userRepository.softDelete(id);
+      this.logger.log(
+        `User deleted: ${targetUser.email} by ${currentUser.email}`,
       );
+
+      return { message: 'User deleted successfully' };
+    } catch (error) {
+      // If it's already a GraphQLError, re-throw it
+      if (error instanceof GraphQLError) {
+        throw error;
+      }
+
+      // Convert other errors
+      throw new GraphQLError('Đã xảy ra lỗi khi xóa người dùng', {
+        extensions: {
+          code: 'INTERNAL_SERVER_ERROR',
+          category: 'system',
+          severity: 'critical',
+          suggestion: 'Vui lòng thử lại sau ít phút',
+          retryable: true,
+          originalMessage: error.message,
+        },
+      });
     }
-
-    // Prevent self-deletion
-    if (currentUser.id === id) {
-      throw new ForbiddenException('You cannot delete your own account');
-    }
-
-    await this.userRepository.softDelete(id);
-    this.logger.log(
-      `User deleted: ${targetUser.email} by ${currentUser.email}`,
-    );
-
-    return { message: 'User deleted successfully' };
   }
 
   @Mutation(() => MessageResponse)
